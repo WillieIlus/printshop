@@ -10,6 +10,9 @@ Includes routes for:
 - Shop social links
 - Shop claims
 - Nearby shops search
+- Inventory (machines, materials)
+- Pricing
+- Quotes and Product Templates
 """
 
 from django.urls import include, path
@@ -25,6 +28,9 @@ from .views import (
     ShopSocialLinkViewSet,
     ShopViewSet,
 )
+
+# Import quote patterns
+from quotes.urls import shop_quote_patterns
 
 app_name = "shops"
 
@@ -85,3 +91,9 @@ urlpatterns = [
     # Nearby shops search
     path("shops-nearby/", NearbyShopsView.as_view(), name="shops-nearby"),
 ]
+
+# Add quote patterns (nested under shops/<slug:shop_slug>/)
+for pattern in shop_quote_patterns:
+    urlpatterns.append(
+        path(f"shops/<slug:shop_slug>/{pattern.pattern}", pattern.callback, name=pattern.name)
+    )

@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -61,6 +62,7 @@ INSTALLED_APPS = [
     "pricing",
     "quotes",
     "templates",
+    "subscription",
 ]
 
 
@@ -194,6 +196,21 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# settings.py additions
+
+# M-Pesa Configuration
+MPESA_CONSUMER_KEY = os.environ.get("MPESA_CONSUMER_KEY", "")
+MPESA_CONSUMER_SECRET = os.environ.get("MPESA_CONSUMER_SECRET", "")
+MPESA_SHORTCODE = os.environ.get("MPESA_SHORTCODE", "")
+MPESA_INITIATOR_NAME = os.environ.get("MPESA_INITIATOR_NAME", "")
+MPESA_SECURITY_CREDENTIAL = os.environ.get("MPESA_SECURITY_CREDENTIAL", "")
+MPESA_TIMEOUT_URL = os.environ.get("MPESA_TIMEOUT_URL", "https://yourdomain.com/api/mpesa/timeout/")
+MPESA_RESULT_URL = os.environ.get("MPESA_RESULT_URL", "https://yourdomain.com/api/mpesa/result/")
+
+# Subscription Settings
+FREE_TRIAL_DAYS = 14
+DEFAULT_SUBSCRIPTION_PLAN = "STARTER"
 
 ROOT_URLCONF = 'printshop_api.urls'
 

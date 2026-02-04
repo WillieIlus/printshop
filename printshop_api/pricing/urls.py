@@ -9,6 +9,10 @@ from .views import (
     RateCardView,
     CostCalculatorView,
     PriceComparisonView,
+    # Simple/Customer-friendly pricing
+    PaperGSMPriceViewSet,
+    SimpleRateCardView,
+    SimplePriceCalculatorView,
 )
 
 app_name = "pricing"
@@ -67,6 +71,21 @@ discount_detail = VolumeDiscountViewSet.as_view({
     "delete": "destroy"
 })
 
+# Simple Paper GSM Pricing
+paper_gsm_list = PaperGSMPriceViewSet.as_view({
+    "get": "list",
+    "post": "create"
+})
+paper_gsm_detail = PaperGSMPriceViewSet.as_view({
+    "get": "retrieve",
+    "put": "update",
+    "patch": "partial_update",
+    "delete": "destroy"
+})
+paper_gsm_by_size = PaperGSMPriceViewSet.as_view({
+    "get": "by_size"
+})
+
 urlpatterns = [
     # Digital Print Prices
     path("print/", print_price_list, name="print-price-list"),
@@ -87,8 +106,20 @@ urlpatterns = [
     path("discounts/", discount_list, name="discount-list"),
     path("discounts/<int:pk>/", discount_detail, name="discount-detail"),
     
-    # Composite Views
+    # Composite Views (Complex)
     path("rate-card/", RateCardView.as_view(), name="rate-card"),
     path("calculate/", CostCalculatorView.as_view(), name="cost-calculator"),
     path("compare/", PriceComparisonView.as_view(), name="price-comparison"),
+    
+    # Simple/Customer-Friendly Pricing (NEW)
+    # Paper GSM Prices - CRUD
+    path("paper-gsm/", paper_gsm_list, name="paper-gsm-list"),
+    path("paper-gsm/<int:pk>/", paper_gsm_detail, name="paper-gsm-detail"),
+    path("paper-gsm/by-size/", paper_gsm_by_size, name="paper-gsm-by-size"),
+    
+    # Simple Rate Card (Public - for customers)
+    path("simple-rate-card/", SimpleRateCardView.as_view(), name="simple-rate-card"),
+    
+    # Simple Calculator (Public - for customers)
+    path("simple-calculate/", SimplePriceCalculatorView.as_view(), name="simple-calculator"),
 ]

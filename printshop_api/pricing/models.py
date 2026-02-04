@@ -254,6 +254,11 @@ class FinishingPrice(TimeStampedModel):
         max_length=150,
         help_text=_("e.g., 'Matt Lamination SRA3', 'Saddle Stitch Binding'")
     )
+    description = models.TextField(
+        _("description"),
+        blank=True,
+        help_text=_("Description of the finishing process for customers")
+    )
     category = models.CharField(
         _("category"),
         max_length=30,
@@ -287,6 +292,17 @@ class FinishingPrice(TimeStampedModel):
     minimum_order_quantity = models.PositiveIntegerField(
         _("minimum order quantity"),
         default=1
+    )
+    # Mandatory/Optional flags
+    is_mandatory = models.BooleanField(
+        _("mandatory"),
+        default=False,
+        help_text=_("If true, this finishing is always applied to applicable jobs")
+    )
+    is_default_selected = models.BooleanField(
+        _("default selected"),
+        default=False,
+        help_text=_("If true, this is pre-selected for optional finishing")
     )
     is_active = models.BooleanField(
         _("active"),
@@ -459,6 +475,194 @@ class VolumeDiscount(TimeStampedModel):
 # =============================================================================
 # Pricing engine (centralized rates + instant quote)
 # =============================================================================
+
+
+class PaperGSMPrice(TimeStampedModel):
+    """
+    Simple, customer-friendly paper pricing by GSM (paper weight).
+    
+    This model allows shop owners to set transparent prices that customers
+    can easily understand:
+    - 130 GSM = KES 10
+    - 150 GSM = KES 15
+    - 170 GSM = KES 17
+    - 200 GSM = KES 20
+    - 250 GSM = KES 25
+    - 300 GSM = KES 30
+    etc.
+    
+    Total price = Print price (per side from DigitalPrintPrice) + Paper price (from this model)
+    """
+    
+    class SheetSize(models.TextChoices):
+        A4 = "A4", _("A4 (210 x 297 mm)")
+        A3 = "A3", _("A3 (297 x 420 mm)")
+        SRA3 = "SRA3", _("SRA3 (320 x 450 mm)")
+        SRA4 = "SRA4", _("SRA4 (225 x 320 mm)")
+        A5 = "A5", _("A5 (148 x 210 mm)")
+        LETTER = "LETTER", _("Letter (8.5 x 11 in)")
+        LEGAL = "LEGAL", _("Legal (8.5 x 14 in)")
+        TABLOID = "TABLOID", _("Tabloid (11 x 17 in)")
+    
+    # Common GSM choices for quick selection
+    class CommonGSM(models.IntegerChoices):
+        GSM_80 = 80, _("80 gsm (Standard Copy)")
+        GSM_100 = 100, _("100 gsm")
+        GSM_120 = 120, _("120 gsm")
+        GSM_130 = 130, _("130 gsm")
+        GSM_150 = 150, _("150 gsm")
+        GSM_170 = 170, _("170 gsm")
+        GSM_200 = 200, _("200 gsm")
+        GSM_250 = 250, _("250 gsm")
+        GSM_300 = 300, _("300 gsm")
+        GSM_350 = 350, _("350 gsm")
+    
+    shop = models.ForeignKey(
+        Shop,
+        on_delete=models.CASCADE,
+        related_name="paper_gsm_prices",
+        help_text=_("The shop this pricing belongs to.")
+    )
+    sheet_size = models.CharField(
+        _("sheet size"),
+        max_length=20,
+        choices=SheetSize.choices,
+        default=SheetSize.A3,
+        help_text=_("Paper size this price applies to.")
+    )
+    gsm = models.PositiveIntegerField(
+        _("GSM (paper weight)"),
+        validators=[MinValueValidator(60), MaxValueValidator(500)],
+        help_text=_("Paper weight in grams per square meter (e.g., 130, 150, 200, 300).")
+    )
+    paper_type = models.CharField(
+        _("paper type"),
+        max_length=100,
+        default="Gloss",
+        help_text=_("Type of paper (e.g., Gloss, Matte, Bond, Art Paper).")
+    )
+    price_per_sheet = models.DecimalField(
+        _("price per sheet"),
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        help_text=_("Customer price per sheet for this GSM paper.")
+    )
+    cost_per_sheet = models.DecimalField(
+        _("cost per sheet"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Your cost price (optional, for profit tracking).")
+    )
+    is_active = models.BooleanField(
+        _("active"),
+        default=True
+    )
+
+    class Meta:
+        verbose_name = _("paper price (GSM)")
+        verbose_name_plural = _("paper prices (GSM)")
+        ordering = ["sheet_size", "gsm"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shop", "sheet_size", "gsm", "paper_type"],
+                name="unique_paper_price_per_shop_size_gsm_type"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.sheet_size} {self.gsm}gsm {self.paper_type}: KES {self.price_per_sheet}"
+    
+    @property
+    def profit_per_sheet(self) -> Decimal:
+        """Calculate profit per sheet if cost is set."""
+        if self.cost_per_sheet:
+            return self.price_per_sheet - self.cost_per_sheet
+        return Decimal("0")
+    
+    @property
+    def margin_percentage(self) -> Decimal:
+        """Calculate margin percentage if cost is set."""
+        if self.cost_per_sheet and self.price_per_sheet > 0:
+            return ((self.price_per_sheet - self.cost_per_sheet) / self.price_per_sheet) * 100
+        return Decimal("0")
+    
+    @classmethod
+    def calculate_total_price(
+        cls,
+        shop,
+        sheet_size: str,
+        gsm: int,
+        quantity: int,
+        sides: int = 1,
+        print_price_per_side: Decimal = None,
+        paper_type: str = "Gloss"
+    ) -> dict:
+        """
+        Calculate total price for a print job.
+        
+        Formula: Total = (Print price × sides × quantity) + (Paper price × quantity)
+        
+        Args:
+            shop: The shop instance
+            sheet_size: Paper size (A3, A4, etc.)
+            gsm: Paper weight
+            quantity: Number of sheets
+            sides: 1 for single-sided, 2 for double-sided
+            print_price_per_side: Override print price (optional)
+            paper_type: Type of paper (default: Gloss)
+        
+        Returns:
+            dict with breakdown: print_cost, paper_cost, total, unit_price
+        """
+        # Get paper price
+        try:
+            paper_price_obj = cls.objects.get(
+                shop=shop,
+                sheet_size=sheet_size,
+                gsm=gsm,
+                paper_type=paper_type,
+                is_active=True
+            )
+            paper_price = paper_price_obj.price_per_sheet
+        except cls.DoesNotExist:
+            paper_price = Decimal("0")
+        
+        # Get print price if not provided
+        if print_price_per_side is None:
+            try:
+                print_price_obj = DigitalPrintPrice.objects.filter(
+                    shop=shop,
+                    sheet_size=sheet_size,
+                    is_active=True
+                ).first()
+                print_price_per_side = print_price_obj.click_rate if print_price_obj else Decimal("0")
+            except Exception:
+                print_price_per_side = Decimal("0")
+        
+        # Calculate costs
+        print_cost = print_price_per_side * sides * quantity
+        paper_cost = paper_price * quantity
+        total = print_cost + paper_cost
+        unit_price = (print_price_per_side * sides) + paper_price
+        
+        return {
+            "print_price_per_side": print_price_per_side,
+            "paper_price_per_sheet": paper_price,
+            "sides": sides,
+            "quantity": quantity,
+            "print_cost": print_cost,
+            "paper_cost": paper_cost,
+            "total": total,
+            "unit_price": unit_price,
+            "breakdown_text": f"Print: {print_price_per_side} × {sides} side(s) = {print_price_per_side * sides} | "
+                             f"Paper ({gsm}gsm): {paper_price} | "
+                             f"Per sheet: {unit_price} | "
+                             f"Total ({quantity} sheets): {total}"
+        }
 
 
 class PricingVariable(TimeStampedModel):

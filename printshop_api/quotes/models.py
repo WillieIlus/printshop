@@ -4,11 +4,13 @@ from decimal import Decimal
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 
 from common.models import TimeStampedModel
 from shops.models import Shop
 from inventory.models import Machine, Material, MaterialStock
 from pricing.models import FinishingPrice
+
 
 class ProductTemplate(TimeStampedModel):
     """
@@ -21,6 +23,12 @@ class ProductTemplate(TimeStampedModel):
     
     # Stores default IDs for machine, material, and standard finishing
     defaults = models.JSONField(default=dict, help_text="JSON Config for default selection")
+    is_active = models.BooleanField(_("active"), default=True)
+
+    class Meta:
+        verbose_name = _("product template")
+        verbose_name_plural = _("product templates")
+        ordering = ["name"]
 
     def __str__(self):
         return self.name
@@ -29,29 +37,133 @@ class ProductTemplate(TimeStampedModel):
 class Quote(TimeStampedModel):
     """
     The head object representing a customer's request.
+    Can be created from a PrintTemplate (gallery) or from scratch.
     """
     class Status(models.TextChoices):
         DRAFT = "DRAFT", _("Draft")
+        PENDING = "PENDING", _("Pending Review")
         SENT = "SENT", _("Sent to Client")
         ACCEPTED = "ACCEPTED", _("Accepted")
         REJECTED = "REJECTED", _("Rejected")
+        EXPIRED = "EXPIRED", _("Expired")
         CONVERTED = "CONVERTED", _("Converted to Job")
 
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="quotes")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="quotes")
-    reference = models.CharField(max_length=50, blank=True, help_text="Auto-generated Ref ID")
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    shop = models.ForeignKey(
+        Shop, 
+        on_delete=models.CASCADE, 
+        related_name="quotes"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name="quotes",
+        help_text=_("The customer requesting the quote")
+    )
+    
+    # Link to gallery template (if created from template)
+    source_template = models.ForeignKey(
+        "templates.PrintTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="quotes",
+        help_text=_("The gallery template this quote was created from")
+    )
+    
+    reference = models.CharField(
+        max_length=50, 
+        blank=True, 
+        help_text=_("Auto-generated Ref ID")
+    )
+    title = models.CharField(
+        _("quote title"),
+        max_length=200,
+        blank=True,
+        help_text=_("Brief description of the quote")
+    )
+    status = models.CharField(
+        max_length=20, 
+        choices=Status.choices, 
+        default=Status.DRAFT
+    )
+    
+    # Customer notes
+    customer_notes = models.TextField(
+        _("customer notes"),
+        blank=True,
+        help_text=_("Special instructions from the customer")
+    )
+    internal_notes = models.TextField(
+        _("internal notes"),
+        blank=True,
+        help_text=_("Notes visible only to shop staff")
+    )
+    
+    # Validity
+    valid_until = models.DateField(
+        _("valid until"),
+        null=True,
+        blank=True,
+        help_text=_("Quote expiration date")
+    )
     
     # Financials
-    net_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
-    tax_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
-    grand_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    net_total = models.DecimalField(
+        max_digits=14, 
+        decimal_places=2, 
+        default=Decimal("0.00")
+    )
+    tax_rate = models.DecimalField(
+        _("tax rate"),
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("16.00"),
+        help_text=_("VAT rate percentage")
+    )
+    tax_amount = models.DecimalField(
+        max_digits=14, 
+        decimal_places=2, 
+        default=Decimal("0.00")
+    )
+    discount_amount = models.DecimalField(
+        _("discount"),
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal("0.00")
+    )
+    grand_total = models.DecimalField(
+        max_digits=14, 
+        decimal_places=2, 
+        default=Decimal("0.00")
+    )
 
     class Meta:
         ordering = ["-created_at"]
+        verbose_name = _("quote")
+        verbose_name_plural = _("quotes")
 
     def __str__(self):
-        return f"Quote #{self.id} - {self.user}"
+        return f"Quote #{self.id} - {self.reference or self.title or 'Untitled'}"
+
+    def save(self, *args, **kwargs):
+        # Auto-generate reference if not set
+        if not self.reference:
+            year = timezone.now().year
+            month = timezone.now().month
+            # Get count of quotes this month
+            count = Quote.objects.filter(
+                shop=self.shop,
+                created_at__year=year,
+                created_at__month=month
+            ).count() + 1
+            self.reference = f"Q-{year}{month:02d}-{count:04d}"
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self):
+        if self.valid_until:
+            return timezone.now().date() > self.valid_until
+        return False
 
 
 class QuoteItem(TimeStampedModel):

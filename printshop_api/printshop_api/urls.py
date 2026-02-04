@@ -2,29 +2,51 @@
 
 """
 Root URL configuration for the printshop_api project.
+
+API Structure:
+- /api/auth/           - Authentication (login, register, tokens)
+- /api/users/          - User management
+- /api/shops/          - Shop CRUD and nested resources
+- /api/shops/{slug}/   - Shop-specific resources:
+    - /members/        - Team management
+    - /hours/          - Opening hours
+    - /social-links/   - Social media
+    - /machines/       - Inventory machines
+    - /materials/      - Inventory materials  
+    - /pricing/        - Shop pricing
+    - /quotes/         - Quote management
+    - /product-templates/ - Shop templates
+- /api/templates/      - Public template gallery
+- /api/my-quotes/      - Customer's quotes
+- /api/claims/         - Shop ownership claims
 """
 
 from django.contrib import admin
 from django.urls import include, path
 from django.conf import settings
 from django.conf.urls.static import static
-from django.views.generic import RedirectView  # <--- 1. Add this import
+from django.views.generic import RedirectView
+
+# Import my-quotes patterns
+from quotes.urls import my_quotes_patterns
 
 urlpatterns = [
-    # 2. Add this line to fix the 404 at the root URL
+    # Root redirect
     path("", RedirectView.as_view(url="/api/"), name="root-redirect"),
 
+    # Admin
     path("admin/", admin.site.urls),
     
     # API endpoints
     path("api/", include("accounts.urls", namespace="accounts")),
     path("api/", include("shops.urls", namespace="shops")),
+    path("api/shops/<slug:shop_slug>/pricing/", include("pricing.urls", namespace="pricing")),
     
-    # NOTE: Since we moved machine/material routes into shops/urls.py, 
-    # you should remove this line to avoid "ModuleNotFoundError" or duplicate routes:
-    # path("api/", include("inventory.urls", namespace="inventory")),
+    # Public template gallery
+    path("api/templates/", include("templates.urls", namespace="templates")),
     
-    path("api/", include("pricing.urls", namespace="pricing")),
+    # Customer's quotes (authenticated)
+    path("api/my-quotes/", include((my_quotes_patterns, "quotes"), namespace="my-quotes")),
 
     # Login/Logout for Browsable API
     path("api-auth/", include("rest_framework.urls")), 

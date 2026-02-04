@@ -10,6 +10,7 @@ from .models import (
     DigitalPrintPrice,
     MaterialPrice,
     FinishingPrice,
+    PaperGSMPrice,
     VolumeDiscount,
 )
 
@@ -437,3 +438,170 @@ class PrintCostResultSerializer(serializers.Serializer):
     total = serializers.DecimalField(max_digits=14, decimal_places=2)
     
     breakdown = serializers.DictField()
+
+
+# =============================================================================
+# Simple/Customer-Friendly Paper GSM Price Serializers
+# =============================================================================
+
+class PaperGSMPriceSerializer(serializers.ModelSerializer):
+    """
+    Full serializer for PaperGSMPrice - the simple pricing model.
+    """
+    
+    sheet_size_display = serializers.CharField(source="get_sheet_size_display", read_only=True)
+    profit_per_sheet = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    margin_percentage = serializers.DecimalField(max_digits=5, decimal_places=1, read_only=True)
+
+    class Meta:
+        model = PaperGSMPrice
+        fields = [
+            "id",
+            "sheet_size",
+            "sheet_size_display",
+            "gsm",
+            "paper_type",
+            "price_per_sheet",
+            "cost_per_sheet",
+            "profit_per_sheet",
+            "margin_percentage",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def create(self, validated_data):
+        validated_data["shop"] = self.context["shop"]
+        return super().create(validated_data)
+
+
+class PaperGSMPriceListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for listing paper GSM prices.
+    Designed for customer-facing rate cards.
+    """
+    
+    class Meta:
+        model = PaperGSMPrice
+        fields = [
+            "gsm",
+            "paper_type",
+            "price_per_sheet",
+        ]
+
+
+class SimpleRateCardPrintPriceSerializer(serializers.Serializer):
+    """
+    Simple print price display for customers.
+    Shows: "A3 Color = KES 15 per side, KES 25 double-sided"
+    """
+    
+    sheet_size = serializers.CharField()
+    sheet_size_display = serializers.CharField()
+    color_mode = serializers.CharField()
+    color_mode_display = serializers.CharField()
+    price_per_side = serializers.DecimalField(max_digits=10, decimal_places=2)
+    price_double_sided = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+
+class SimpleRateCardPaperPriceSerializer(serializers.Serializer):
+    """
+    Simple paper price display for customers.
+    Shows: "130gsm = KES 10, 150gsm = KES 15, 300gsm = KES 30"
+    """
+    
+    gsm = serializers.IntegerField()
+    paper_type = serializers.CharField()
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, source="price_per_sheet")
+
+
+class SimpleRateCardSerializer(serializers.Serializer):
+    """
+    Customer-friendly rate card showing simple pricing.
+    
+    Example output:
+    {
+        "print_prices": [
+            {"sheet_size": "A3", "color_mode": "COLOR", "price_per_side": 15, "price_double_sided": 25}
+        ],
+        "paper_prices": {
+            "A3": {
+                "Gloss": [
+                    {"gsm": 130, "price": 10},
+                    {"gsm": 150, "price": 15},
+                    {"gsm": 300, "price": 30}
+                ]
+            }
+        },
+        "how_to_calculate": "Total = (Print per side × number of sides) + Paper price"
+    }
+    """
+    
+    shop_name = serializers.CharField()
+    print_prices = SimpleRateCardPrintPriceSerializer(many=True)
+    paper_prices = serializers.DictField()
+    how_to_calculate = serializers.CharField()
+    examples = serializers.ListField(child=serializers.DictField())
+
+
+class SimplePriceCalculatorInputSerializer(serializers.Serializer):
+    """
+    Input for simple price calculator.
+    Customer provides: sheet_size, gsm, sides (1 or 2), quantity
+    """
+    
+    sheet_size = serializers.ChoiceField(
+        choices=PaperGSMPrice.SheetSize.choices,
+        help_text="Paper size (e.g., A3, A4)"
+    )
+    gsm = serializers.IntegerField(
+        min_value=60,
+        max_value=500,
+        help_text="Paper weight in GSM (e.g., 130, 150, 200, 300)"
+    )
+    paper_type = serializers.CharField(
+        default="Gloss",
+        help_text="Paper type (e.g., Gloss, Matte)"
+    )
+    sides = serializers.ChoiceField(
+        choices=[(1, "Single-sided"), (2, "Double-sided")],
+        help_text="Number of printed sides"
+    )
+    quantity = serializers.IntegerField(
+        min_value=1,
+        help_text="Number of sheets"
+    )
+    color_mode = serializers.ChoiceField(
+        choices=DigitalPrintPrice.ColorMode.choices,
+        default="COLOR",
+        help_text="Color mode (COLOR or BW)"
+    )
+
+
+class SimplePriceCalculatorOutputSerializer(serializers.Serializer):
+    """
+    Output for simple price calculator.
+    Shows clear breakdown that customer can understand.
+    """
+    
+    # Input echo
+    sheet_size = serializers.CharField()
+    gsm = serializers.IntegerField()
+    paper_type = serializers.CharField()
+    sides = serializers.IntegerField()
+    quantity = serializers.IntegerField()
+    
+    # Price breakdown
+    print_price_per_side = serializers.DecimalField(max_digits=10, decimal_places=2)
+    print_price_per_sheet = serializers.DecimalField(max_digits=10, decimal_places=2)
+    paper_price_per_sheet = serializers.DecimalField(max_digits=10, decimal_places=2)
+    price_per_sheet = serializers.DecimalField(max_digits=10, decimal_places=2)
+    
+    # Totals
+    total_print_cost = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_paper_cost = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total = serializers.DecimalField(max_digits=10, decimal_places=2)
+    
+    # Human-readable breakdown
+    breakdown_text = serializers.CharField()

@@ -11,6 +11,7 @@ from .models import (
     FinishingOption,
     FinishingPrice,
     MaterialPrice,
+    PaperGSMPrice,
     PricingEngine,
     PricingTier,
     PricingVariable,
@@ -175,6 +176,115 @@ class MaterialPriceAdmin(admin.ModelAdmin):
 
 
 # =============================================================================
+# Paper GSM Price Admin (Customer-Friendly Pricing)
+# =============================================================================
+
+@admin.register(PaperGSMPrice)
+class PaperGSMPriceAdmin(admin.ModelAdmin):
+    """
+    Admin for simple, transparent paper pricing by GSM.
+    Allows shop owners to set prices customers can easily understand.
+    
+    Example rate card:
+    - A3 130gsm Gloss: KES 10
+    - A3 150gsm Gloss: KES 15
+    - A3 200gsm Gloss: KES 20
+    - A3 300gsm Gloss: KES 30
+    """
+    list_display = [
+        "sheet_size",
+        "gsm",
+        "paper_type",
+        "price_display",
+        "cost_display",
+        "profit_display",
+        "margin_display",
+        "shop_name",
+        "is_active",
+    ]
+    list_filter = ["shop", "sheet_size", "paper_type", "is_active"]
+    search_fields = ["shop__name", "paper_type"]
+    list_select_related = ["shop"]
+    ordering = ["shop", "sheet_size", "gsm"]
+    list_per_page = 50
+    list_editable = ["price_per_sheet", "is_active"] if False else []  # Set to True to enable inline editing
+    
+    fieldsets = (
+        (None, {
+            "fields": ("shop",),
+        }),
+        (_("Paper Details"), {
+            "fields": ("sheet_size", "gsm", "paper_type"),
+            "description": "Select the paper size and weight (GSM). Common GSM values: 80 (copy paper), 130, 150, 170, 200, 250, 300, 350."
+        }),
+        (_("Pricing"), {
+            "fields": ("price_per_sheet", "cost_per_sheet"),
+            "description": "Set the customer-facing price. Cost is optional (for your profit tracking)."
+        }),
+        (_("Status"), {
+            "fields": ("is_active",)
+        }),
+    )
+    
+    @admin.display(description="Shop", ordering="shop__name")
+    def shop_name(self, obj):
+        return obj.shop.name
+    
+    @admin.display(description="Price/Sheet")
+    def price_display(self, obj):
+        return format_html("<strong>KES {}</strong>", obj.price_per_sheet)
+    
+    @admin.display(description="Cost/Sheet")
+    def cost_display(self, obj):
+        if obj.cost_per_sheet:
+            return f"KES {obj.cost_per_sheet}"
+        return format_html('<span style="color: #999;">—</span>')
+    
+    @admin.display(description="Profit/Sheet")
+    def profit_display(self, obj):
+        profit = obj.profit_per_sheet
+        if profit > 0:
+            return format_html('<span style="color: green;">KES {}</span>', profit)
+        elif profit < 0:
+            return format_html('<span style="color: red;">KES {}</span>', profit)
+        return format_html('<span style="color: #999;">—</span>')
+    
+    @admin.display(description="Margin")
+    def margin_display(self, obj):
+        margin = obj.margin_percentage
+        if margin > 0:
+            return format_html('<span style="color: green;">{:.1f}%</span>', margin)
+        return format_html('<span style="color: #999;">—</span>')
+
+    actions = ["duplicate_for_other_sizes"]
+    
+    @admin.action(description="Duplicate selected prices for other sheet sizes")
+    def duplicate_for_other_sizes(self, request, queryset):
+        """Quickly set up pricing for multiple sheet sizes."""
+        from django.contrib import messages
+        
+        created_count = 0
+        for price in queryset:
+            for size_code, size_label in PaperGSMPrice.SheetSize.choices:
+                if size_code != price.sheet_size:
+                    _, created = PaperGSMPrice.objects.get_or_create(
+                        shop=price.shop,
+                        sheet_size=size_code,
+                        gsm=price.gsm,
+                        paper_type=price.paper_type,
+                        defaults={
+                            "price_per_sheet": price.price_per_sheet,
+                            "cost_per_sheet": price.cost_per_sheet,
+                            "is_active": price.is_active,
+                        }
+                    )
+                    if created:
+                        created_count += 1
+        
+        messages.success(request, f"Created {created_count} new paper price entries.")
+
+
+# =============================================================================
 # Finishing Price Admin (with Tiers)
 # =============================================================================
 
@@ -186,13 +296,13 @@ class FinishingPriceAdmin(admin.ModelAdmin):
         "category",
         "price_display",
         "unit",
-        "batch_info",
+        "mandatory_display",
         "setup_fee",
         "tier_count",
         "is_active",
     ]
-    list_filter = ["shop", "category", "unit", "is_active"]
-    search_fields = ["process_name", "shop__name"]
+    list_filter = ["shop", "category", "unit", "is_mandatory", "is_default_selected", "is_active"]
+    search_fields = ["process_name", "shop__name", "description"]
     list_select_related = ["shop"]
     ordering = ["shop", "category", "process_name"]
     list_per_page = 50
@@ -200,7 +310,7 @@ class FinishingPriceAdmin(admin.ModelAdmin):
     
     fieldsets = (
         (None, {
-            "fields": ("shop", "category", "process_name")
+            "fields": ("shop", "category", "process_name", "description")
         }),
         (_("Pricing Logic"), {
             "fields": ("unit", "price", "batch_size"),
@@ -208,6 +318,10 @@ class FinishingPriceAdmin(admin.ModelAdmin):
         }),
         (_("Additional Charges"), {
             "fields": ("setup_fee", "minimum_order_quantity")
+        }),
+        (_("Mandatory/Optional"), {
+            "fields": ("is_mandatory", "is_default_selected"),
+            "description": "Mandatory finishing is always included. Default selected is pre-checked for optional finishing."
         }),
         (_("Status"), {
             "fields": ("is_active",)
@@ -221,6 +335,14 @@ class FinishingPriceAdmin(admin.ModelAdmin):
     @admin.display(description="Price")
     def price_display(self, obj):
         return format_html("<strong>{}</strong> / {}", obj.price, obj.get_unit_display())
+
+    @admin.display(description="Type")
+    def mandatory_display(self, obj):
+        if obj.is_mandatory:
+            return format_html('<span style="color: red; font-weight: bold;">Mandatory</span>')
+        elif obj.is_default_selected:
+            return format_html('<span style="color: green;">Default</span>')
+        return format_html('<span style="color: #999;">Optional</span>')
     
     @admin.display(description="Batch")
     def batch_info(self, obj):

@@ -16,6 +16,7 @@ from .models import (
     DigitalPrintPrice,
     MaterialPrice,
     FinishingPrice,
+    PaperGSMPrice,
     VolumeDiscount,
 )
 from .serializers import (
@@ -31,6 +32,11 @@ from .serializers import (
     FullRateCardSerializer,
     PrintCostCalculatorSerializer,
     PrintCostResultSerializer,
+    # Simple pricing serializers
+    PaperGSMPriceSerializer,
+    PaperGSMPriceListSerializer,
+    SimplePriceCalculatorInputSerializer,
+    SimplePriceCalculatorOutputSerializer,
 )
 
 
@@ -447,4 +453,266 @@ class PriceComparisonView(APIView):
             "sheet_size": sheet_size,
             "quantity": quantity,
             "comparisons": comparisons,
+        })
+
+
+# =============================================================================
+# Simple/Customer-Friendly Pricing Views
+# =============================================================================
+
+class PaperGSMPriceViewSet(ShopScopedMixin, viewsets.ModelViewSet):
+    """
+    Manage simple paper GSM prices for a shop.
+    Endpoint: /api/shops/{shop_slug}/pricing/paper-gsm/
+    
+    This is the customer-friendly pricing model:
+    - 130 GSM = KES 10
+    - 150 GSM = KES 15
+    - 200 GSM = KES 20
+    - 300 GSM = KES 30
+    """
+    
+    def get_serializer_class(self):
+        if self.action == "list":
+            return PaperGSMPriceListSerializer
+        return PaperGSMPriceSerializer
+    
+    def get_queryset(self):
+        return PaperGSMPrice.objects.filter(
+            shop=self.get_shop()
+        ).order_by("sheet_size", "paper_type", "gsm")
+    
+    @action(detail=False, methods=["get"])
+    def by_size(self, request, shop_slug=None):
+        """Group paper prices by sheet size for easier viewing."""
+        shop = self.get_shop()
+        prices = PaperGSMPrice.objects.filter(
+            shop=shop, is_active=True
+        ).order_by("sheet_size", "paper_type", "gsm")
+        
+        grouped = {}
+        for price in prices:
+            size = price.sheet_size
+            paper_type = price.paper_type
+            
+            if size not in grouped:
+                grouped[size] = {}
+            if paper_type not in grouped[size]:
+                grouped[size][paper_type] = []
+            
+            grouped[size][paper_type].append({
+                "gsm": price.gsm,
+                "price": str(price.price_per_sheet),
+            })
+        
+        return Response(grouped)
+
+
+class SimpleRateCardView(APIView):
+    """
+    Customer-friendly rate card showing simple pricing.
+    Endpoint: GET /api/shops/{shop_slug}/pricing/simple-rate-card/
+    
+    Shows:
+    - Print prices per side (e.g., A3 Color = KES 15/side)
+    - Paper prices by GSM (e.g., 130gsm = KES 10, 300gsm = KES 30)
+    - Simple calculation formula
+    - Example calculations
+    
+    This is what customers can see to understand pricing at a glance.
+    """
+    
+    permission_classes = [permissions.AllowAny]  # Public rate card
+    
+    def get(self, request, shop_slug):
+        shop = get_object_or_404(Shop, slug=shop_slug)
+        
+        # 1. Get print prices (grouped by size/color)
+        print_prices = DigitalPrintPrice.objects.filter(
+            shop=shop, is_active=True
+        ).order_by("sheet_size", "color_mode")
+        
+        print_price_list = []
+        for pp in print_prices:
+            print_price_list.append({
+                "sheet_size": pp.sheet_size,
+                "sheet_size_display": pp.get_sheet_size_display(),
+                "color_mode": pp.color_mode,
+                "color_mode_display": pp.get_color_mode_display(),
+                "price_per_side": str(pp.click_rate),
+                "price_double_sided": str(pp.effective_duplex_rate),
+            })
+        
+        # 2. Get paper prices (grouped by size, then paper type)
+        paper_prices = PaperGSMPrice.objects.filter(
+            shop=shop, is_active=True
+        ).order_by("sheet_size", "paper_type", "gsm")
+        
+        paper_price_dict = {}
+        for gp in paper_prices:
+            size = gp.sheet_size
+            paper_type = gp.paper_type
+            
+            if size not in paper_price_dict:
+                paper_price_dict[size] = {}
+            if paper_type not in paper_price_dict[size]:
+                paper_price_dict[size][paper_type] = []
+            
+            paper_price_dict[size][paper_type].append({
+                "gsm": gp.gsm,
+                "price": str(gp.price_per_sheet),
+            })
+        
+        # 3. Generate examples
+        examples = []
+        
+        # Find an A3 color print price for examples
+        a3_print = print_prices.filter(sheet_size="A3", color_mode="COLOR").first()
+        a3_paper_300 = paper_prices.filter(sheet_size="A3", gsm=300).first()
+        
+        if a3_print and a3_paper_300:
+            single_total = a3_print.click_rate + a3_paper_300.price_per_sheet
+            double_total = a3_print.effective_duplex_rate + a3_paper_300.price_per_sheet
+            
+            examples.append({
+                "description": "1x A3 single-sided on 300gsm",
+                "calculation": f"Print ({a3_print.click_rate} × 1 side) + Paper ({a3_paper_300.price_per_sheet}) = KES {single_total}",
+                "total": str(single_total),
+            })
+            examples.append({
+                "description": "1x A3 double-sided on 300gsm", 
+                "calculation": f"Print ({a3_print.click_rate} × 2 sides) + Paper ({a3_paper_300.price_per_sheet}) = KES {double_total}",
+                "total": str(double_total),
+            })
+            examples.append({
+                "description": "100x A3 double-sided on 300gsm",
+                "calculation": f"(Print {a3_print.effective_duplex_rate} + Paper {a3_paper_300.price_per_sheet}) × 100 = KES {double_total * 100}",
+                "total": str(double_total * 100),
+            })
+        
+        return Response({
+            "shop_name": shop.name,
+            "generated_at": timezone.now(),
+            "print_prices": print_price_list,
+            "paper_prices": paper_price_dict,
+            "how_to_calculate": "Total per sheet = (Print price × sides) + Paper price. Multiply by quantity for total.",
+            "examples": examples,
+        })
+
+
+class SimplePriceCalculatorView(APIView):
+    """
+    Simple price calculator for customers.
+    Endpoint: POST /api/shops/{shop_slug}/pricing/simple-calculate/
+    
+    Input:
+    {
+        "sheet_size": "A3",
+        "gsm": 300,
+        "paper_type": "Gloss",
+        "sides": 2,
+        "quantity": 100,
+        "color_mode": "COLOR"
+    }
+    
+    Output:
+    {
+        "print_price_per_side": 15,
+        "print_price_per_sheet": 30,  // 15 × 2 sides
+        "paper_price_per_sheet": 30,  // 300gsm paper
+        "price_per_sheet": 60,        // 30 + 30
+        "total_print_cost": 3000,     // 30 × 100
+        "total_paper_cost": 3000,     // 30 × 100
+        "total": 6000,                // 60 × 100
+        "breakdown_text": "Print: 15 × 2 sides = 30 | Paper (300gsm): 30 | Per sheet: 60 | Total (100 sheets): 6000"
+    }
+    """
+    
+    permission_classes = [permissions.AllowAny]  # Public calculator
+    
+    def post(self, request, shop_slug):
+        shop = get_object_or_404(Shop, slug=shop_slug)
+        
+        # Validate input
+        serializer = SimplePriceCalculatorInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        
+        sheet_size = data["sheet_size"]
+        gsm = data["gsm"]
+        paper_type = data.get("paper_type", "Gloss")
+        sides = int(data["sides"])
+        quantity = data["quantity"]
+        color_mode = data.get("color_mode", "COLOR")
+        
+        # 1. Get print price
+        print_price_obj = DigitalPrintPrice.objects.filter(
+            shop=shop,
+            sheet_size=sheet_size,
+            color_mode=color_mode,
+            is_active=True
+        ).first()
+        
+        if not print_price_obj:
+            return Response({
+                "error": f"No print price found for {sheet_size} {color_mode}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        print_price_per_side = print_price_obj.click_rate
+        
+        # 2. Get paper price
+        paper_price_obj = PaperGSMPrice.objects.filter(
+            shop=shop,
+            sheet_size=sheet_size,
+            gsm=gsm,
+            paper_type=paper_type,
+            is_active=True
+        ).first()
+        
+        if not paper_price_obj:
+            # Try without paper_type filter
+            paper_price_obj = PaperGSMPrice.objects.filter(
+                shop=shop,
+                sheet_size=sheet_size,
+                gsm=gsm,
+                is_active=True
+            ).first()
+        
+        if not paper_price_obj:
+            return Response({
+                "error": f"No paper price found for {sheet_size} {gsm}gsm"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        paper_price_per_sheet = paper_price_obj.price_per_sheet
+        
+        # 3. Calculate
+        print_price_per_sheet = print_price_per_side * sides
+        price_per_sheet = print_price_per_sheet + paper_price_per_sheet
+        
+        total_print_cost = print_price_per_sheet * quantity
+        total_paper_cost = paper_price_per_sheet * quantity
+        total = price_per_sheet * quantity
+        
+        # 4. Build breakdown text
+        breakdown_text = (
+            f"Print: {print_price_per_side} × {sides} side(s) = {print_price_per_sheet} | "
+            f"Paper ({gsm}gsm): {paper_price_per_sheet} | "
+            f"Per sheet: {price_per_sheet} | "
+            f"Total ({quantity} sheets): {total}"
+        )
+        
+        return Response({
+            "sheet_size": sheet_size,
+            "gsm": gsm,
+            "paper_type": paper_type,
+            "sides": sides,
+            "quantity": quantity,
+            "print_price_per_side": str(print_price_per_side),
+            "print_price_per_sheet": str(print_price_per_sheet),
+            "paper_price_per_sheet": str(paper_price_per_sheet),
+            "price_per_sheet": str(price_per_sheet),
+            "total_print_cost": str(total_print_cost),
+            "total_paper_cost": str(total_paper_cost),
+            "total": str(total),
+            "breakdown_text": breakdown_text,
         })
