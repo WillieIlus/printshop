@@ -1,4 +1,7 @@
 # quotes/models.py
+"""
+Quote models for customer requests and pricing calculations.
+"""
 
 from decimal import Decimal
 from django.db import models
@@ -8,21 +11,39 @@ from django.utils import timezone
 
 from common.models import TimeStampedModel
 from shops.models import Shop
-from inventory.models import Machine, Material, MaterialStock
-from pricing.models import FinishingPrice
+from inventory.models import Machine, PaperStock
+from pricing.models import FinishingService
 
 
 class ProductTemplate(TimeStampedModel):
     """
-    Presets defined by the shop owner for quick quoting.
-    e.g., "Standard Business Card", "A5 Flyer".
-    """
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="product_templates")
-    name = models.CharField(max_length=150)
-    description = models.TextField(blank=True)
+    Quick quote presets defined by the shop owner.
     
-    # Stores default IDs for machine, material, and standard finishing
-    defaults = models.JSONField(default=dict, help_text="JSON Config for default selection")
+    Examples:
+    - Standard Business Card (85×55mm, 300gsm, duplex)
+    - A5 Flyer (148×210mm, 150gsm, simplex)
+    """
+    
+    shop = models.ForeignKey(
+        Shop, 
+        on_delete=models.CASCADE, 
+        related_name="product_templates"
+    )
+    name = models.CharField(
+        _("template name"),
+        max_length=150
+    )
+    description = models.TextField(
+        _("description"),
+        blank=True
+    )
+    
+    # Default specifications (stored as JSON for flexibility)
+    defaults = models.JSONField(
+        default=dict, 
+        help_text=_("Default settings: {width, height, gsm, sides, finishing_ids}")
+    )
+    
     is_active = models.BooleanField(_("active"), default=True)
 
     class Meta:
@@ -36,9 +57,13 @@ class ProductTemplate(TimeStampedModel):
 
 class Quote(TimeStampedModel):
     """
-    The head object representing a customer's request.
-    Can be created from a PrintTemplate (gallery) or from scratch.
+    Customer quote request.
+    
+    Can be created:
+    - From a PrintTemplate (customer browsing gallery)
+    - From scratch (shop creates quote)
     """
+    
     class Status(models.TextChoices):
         DRAFT = "DRAFT", _("Draft")
         PENDING = "PENDING", _("Pending Review")
@@ -60,26 +85,26 @@ class Quote(TimeStampedModel):
         help_text=_("The customer requesting the quote")
     )
     
-    # Link to gallery template (if created from template)
+    # Link to gallery template (optional)
     source_template = models.ForeignKey(
         "templates.PrintTemplate",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="quotes",
-        help_text=_("The gallery template this quote was created from")
+        related_name="quotes"
     )
     
+    # Basic info
     reference = models.CharField(
+        _("reference"),
         max_length=50, 
         blank=True, 
-        help_text=_("Auto-generated Ref ID")
+        help_text=_("Auto-generated, e.g., Q-202602-0001")
     )
     title = models.CharField(
-        _("quote title"),
+        _("title"),
         max_length=200,
-        blank=True,
-        help_text=_("Brief description of the quote")
+        blank=True
     )
     status = models.CharField(
         max_length=20, 
@@ -87,40 +112,38 @@ class Quote(TimeStampedModel):
         default=Status.DRAFT
     )
     
-    # Customer notes
+    # Notes
     customer_notes = models.TextField(
         _("customer notes"),
-        blank=True,
-        help_text=_("Special instructions from the customer")
+        blank=True
     )
     internal_notes = models.TextField(
         _("internal notes"),
-        blank=True,
-        help_text=_("Notes visible only to shop staff")
+        blank=True
     )
     
     # Validity
     valid_until = models.DateField(
         _("valid until"),
         null=True,
-        blank=True,
-        help_text=_("Quote expiration date")
+        blank=True
     )
     
-    # Financials
+    # Financials (calculated)
     net_total = models.DecimalField(
+        _("subtotal"),
         max_digits=14, 
         decimal_places=2, 
         default=Decimal("0.00")
     )
     tax_rate = models.DecimalField(
-        _("tax rate"),
+        _("tax rate %"),
         max_digits=5,
         decimal_places=2,
-        default=Decimal("16.00"),
-        help_text=_("VAT rate percentage")
+        default=Decimal("16.00")
     )
     tax_amount = models.DecimalField(
+        _("tax amount"),
         max_digits=14, 
         decimal_places=2, 
         default=Decimal("0.00")
@@ -132,6 +155,7 @@ class Quote(TimeStampedModel):
         default=Decimal("0.00")
     )
     grand_total = models.DecimalField(
+        _("grand total"),
         max_digits=14, 
         decimal_places=2, 
         default=Decimal("0.00")
@@ -146,11 +170,10 @@ class Quote(TimeStampedModel):
         return f"Quote #{self.id} - {self.reference or self.title or 'Untitled'}"
 
     def save(self, *args, **kwargs):
-        # Auto-generate reference if not set
+        # Auto-generate reference
         if not self.reference:
             year = timezone.now().year
             month = timezone.now().month
-            # Get count of quotes this month
             count = Quote.objects.filter(
                 shop=self.shop,
                 created_at__year=year,
@@ -168,68 +191,166 @@ class Quote(TimeStampedModel):
 
 class QuoteItem(TimeStampedModel):
     """
-    A line item in the quote.
-    Represents the final product delivered to the client.
-    e.g., "500 x Annual Reports".
-    """
-    quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name="items")
-    name = models.CharField(max_length=150, help_text="e.g. Annual Reports")
-    quantity = models.PositiveIntegerField(default=1)
+    Line item in a quote.
     
-    # The calculated price for this entire line item
-    calculated_price = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    Example: "500 Business Cards"
+    """
+    
+    quote = models.ForeignKey(
+        Quote, 
+        on_delete=models.CASCADE, 
+        related_name="items"
+    )
+    name = models.CharField(
+        _("item name"),
+        max_length=150, 
+        help_text=_("e.g., Business Cards")
+    )
+    quantity = models.PositiveIntegerField(
+        _("quantity"),
+        default=1
+    )
+    
+    # Calculated price for this line item
+    calculated_price = models.DecimalField(
+        _("total price"),
+        max_digits=14, 
+        decimal_places=2, 
+        default=Decimal("0.00")
+    )
+
+    class Meta:
+        verbose_name = _("quote item")
+        verbose_name_plural = _("quote items")
 
     def __str__(self):
-        return f"{self.quantity} x {self.name}"
+        return f"{self.quantity} × {self.name}"
 
 
 class QuoteItemPart(TimeStampedModel):
     """
-    The physical components that make up an Item.
-    A Flyer has 1 Part.
-    A Book has 2 Parts: "Cover" and "Inner Pages".
+    Physical component of a quote item.
+    
+    Simple items have 1 part:
+    - Flyer: 1 part (the flyer itself)
+    
+    Complex items have multiple parts:
+    - Book: 2 parts (cover + inner pages)
     """
+    
     class PrintSides(models.TextChoices):
-        SIMPLEX = "SIMPLEX", _("Simplex (One Side)")
-        DUPLEX = "DUPLEX", _("Duplex (Two Sides)")
+        SINGLE = "SINGLE", _("Single-sided")
+        DOUBLE = "DOUBLE", _("Double-sided")
 
-    item = models.ForeignKey(QuoteItem, on_delete=models.CASCADE, related_name="parts")
-    name = models.CharField(max_length=100, help_text="e.g. Cover, Inner Pages")
+    item = models.ForeignKey(
+        QuoteItem, 
+        on_delete=models.CASCADE, 
+        related_name="parts"
+    )
+    name = models.CharField(
+        _("part name"),
+        max_length=100, 
+        help_text=_("e.g., Cover, Inner Pages")
+    )
     
-    # The Final Cut Size of this part (e.g., A5 = 148x210mm)
-    final_width = models.DecimalField(max_digits=10, decimal_places=2, help_text="Width in mm")
-    final_height = models.DecimalField(max_digits=10, decimal_places=2, help_text="Height in mm")
+    # Final dimensions (after cutting)
+    final_width = models.DecimalField(
+        _("width (mm)"),
+        max_digits=10, 
+        decimal_places=2
+    )
+    final_height = models.DecimalField(
+        _("height (mm)"),
+        max_digits=10, 
+        decimal_places=2
+    )
 
-    # Production Specs
-    material = models.ForeignKey(Material, on_delete=models.PROTECT)
-    # Optional: User can specify which exact stock size to use, or logic can guess
-    preferred_stock = models.ForeignKey(MaterialStock, on_delete=models.SET_NULL, null=True, blank=True)
+    # Paper selection
+    paper_stock = models.ForeignKey(
+        PaperStock, 
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        help_text=_("Paper to use from stock")
+    )
     
-    machine = models.ForeignKey(Machine, on_delete=models.PROTECT)
-    print_sides = models.CharField(max_length=10, choices=PrintSides.choices, default=PrintSides.SIMPLEX)
+    # Alternative: specify paper directly (for simpler use)
+    paper_gsm = models.PositiveIntegerField(
+        _("paper GSM"),
+        null=True,
+        blank=True,
+        help_text=_("Paper weight if not using stock")
+    )
+    
+    # Machine and printing
+    machine = models.ForeignKey(
+        Machine, 
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True
+    )
+    print_sides = models.CharField(
+        _("print sides"),
+        max_length=10, 
+        choices=PrintSides.choices, 
+        default=PrintSides.SINGLE
+    )
 
-    # Imposition Results (Calculated & Stored for transparency)
-    items_per_sheet = models.PositiveIntegerField(default=1, help_text="N-Up on the stock sheet")
-    total_sheets_required = models.PositiveIntegerField(default=0, help_text="Total large sheets needed for the run")
+    # Imposition results (calculated)
+    items_per_sheet = models.PositiveIntegerField(
+        _("items per sheet"),
+        default=1, 
+        help_text=_("How many fit on one sheet")
+    )
+    total_sheets_required = models.PositiveIntegerField(
+        _("sheets required"),
+        default=0
+    )
     
-    # Financial Breakdown (Snapshotted)
-    part_cost = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    # Cost (calculated)
+    part_cost = models.DecimalField(
+        _("cost"),
+        max_digits=14, 
+        decimal_places=2, 
+        default=Decimal("0.00")
+    )
+
+    class Meta:
+        verbose_name = _("quote item part")
+        verbose_name_plural = _("quote item parts")
 
     def __str__(self):
-        return f"{self.name} ({self.print_sides})"
+        return f"{self.name} ({self.get_print_sides_display()})"
 
 
 class QuoteItemFinishing(TimeStampedModel):
     """
-    Value Added Services attached to the Line Item.
-    e.g., "Saddle Stitching" applies to the whole Item (Book).
-    e.g., "Lamination" might conceptually apply to the item, calculated via sheet count.
-    """
-    item = models.ForeignKey(QuoteItem, on_delete=models.CASCADE, related_name="finishing")
-    finishing_price = models.ForeignKey(FinishingPrice, on_delete=models.PROTECT)
+    Finishing service applied to a quote item.
     
-    # Override cost allows ad-hoc adjustments
-    calculated_cost = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    Example: Lamination, Binding, Cutting
+    """
+    
+    item = models.ForeignKey(
+        QuoteItem, 
+        on_delete=models.CASCADE, 
+        related_name="finishing"
+    )
+    finishing_service = models.ForeignKey(
+        FinishingService, 
+        on_delete=models.PROTECT
+    )
+    
+    # Calculated cost
+    calculated_cost = models.DecimalField(
+        _("cost"),
+        max_digits=14, 
+        decimal_places=2, 
+        default=Decimal("0.00")
+    )
+
+    class Meta:
+        verbose_name = _("quote item finishing")
+        verbose_name_plural = _("quote item finishings")
 
     def __str__(self):
-        return self.finishing_price.process_name
+        return self.finishing_service.name

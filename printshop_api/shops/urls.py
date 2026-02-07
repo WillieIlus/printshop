@@ -32,6 +32,9 @@ from .views import (
 # Import quote patterns
 from quotes.urls import shop_quote_patterns
 
+# Import public pricing views
+from pricing.views import RateCardView, CalculatePriceView
+
 app_name = "shops"
 
 # Main router for shops and claims
@@ -90,6 +93,10 @@ urlpatterns = [
     
     # Nearby shops search
     path("shops-nearby/", NearbyShopsView.as_view(), name="shops-nearby"),
+    
+    # Public pricing endpoints (no auth required)
+    path("shops/<slug:shop_slug>/rate-card/", RateCardView.as_view(), name="shop-rate-card"),
+    path("shops/<slug:shop_slug>/calculate-price/", CalculatePriceView.as_view(), name="shop-calculate-price"),
 ]
 
 # Add quote patterns (nested under shops/<slug:shop_slug>/)

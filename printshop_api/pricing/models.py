@@ -1,4 +1,12 @@
 # pricing/models.py
+"""
+Simplified pricing models with layman-friendly terminology.
+
+Key concepts:
+- Buying Price: What the shop pays (cost)
+- Selling Price: What the customer pays
+- Profit: Selling Price - Buying Price
+"""
 
 from decimal import Decimal
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -7,805 +15,460 @@ from django.utils.translation import gettext_lazy as _
 
 from common.models import TimeStampedModel
 from shops.models import Shop
-from inventory.models import Machine, Material
+from inventory.models import Machine
 
 
-class DigitalPrintPrice(TimeStampedModel):
+# =============================================================================
+# PRINTING PRICES - What you charge for printing per side
+# =============================================================================
+
+class PrintingPrice(TimeStampedModel):
     """
-    Defines the cost of printing on a specific machine.
-    Supports separate rates for simplex (Side 1) and duplex (Side 1 + Side 2).
+    Printing cost per side (click rate).
+    
+    Example:
+    - A3 Color: KES 15 per side
+    - A3 B&W: KES 5 per side
     """
     
     class SheetSize(models.TextChoices):
-        A4 = "A4", _("A4 (210 x 297 mm)")
-        A3 = "A3", _("A3 (297 x 420 mm)")
-        SRA3 = "SRA3", _("SRA3 (320 x 450 mm)")
-        SRA4 = "SRA4", _("SRA4 (225 x 320 mm)")
-        A5 = "A5", _("A5 (148 x 210 mm)")
-        LETTER = "LETTER", _("Letter (8.5 x 11 in)")
-        LEGAL = "LEGAL", _("Legal (8.5 x 14 in)")
-        TABLOID = "TABLOID", _("Tabloid (11 x 17 in)")
+        A5 = "A5", _("A5")
+        A4 = "A4", _("A4")
+        A3 = "A3", _("A3")
+        SRA3 = "SRA3", _("SRA3")
     
     class ColorMode(models.TextChoices):
         BW = "BW", _("Black & White")
         COLOR = "COLOR", _("Full Color")
-        SPOT = "SPOT", _("Spot Color")
 
     shop = models.ForeignKey(
         Shop,
         on_delete=models.CASCADE,
-        related_name="digital_print_prices",
-        help_text=_("The shop this pricing belongs to.")
+        related_name="printing_prices"
     )
     machine = models.ForeignKey(
         Machine,
         on_delete=models.PROTECT,
-        related_name="print_prices",
-        help_text=_("The machine this price applies to.")
+        related_name="printing_prices",
+        help_text=_("Which machine/printer")
     )
     sheet_size = models.CharField(
-        _("sheet size"),
+        _("paper size"),
         max_length=20,
         choices=SheetSize.choices,
         default=SheetSize.A4
     )
     color_mode = models.CharField(
-        _("color mode"),
+        _("color"),
         max_length=20,
         choices=ColorMode.choices,
         default=ColorMode.COLOR
     )
-    click_rate = models.DecimalField(
-        _("click rate"),
+    
+    # Simple pricing
+    selling_price_per_side = models.DecimalField(
+        _("selling price per side"),
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.01"))],
-        help_text=_("Cost per impression/click (one side of paper).")
+        help_text=_("Price customer pays per printed side")
     )
-    duplex_rate = models.DecimalField(
-        _("duplex rate"),
+    buying_price_per_side = models.DecimalField(
+        _("buying price per side"),
         max_digits=10,
         decimal_places=2,
         null=True,
         blank=True,
-        validators=[MinValueValidator(Decimal("0.01"))],
-        help_text=_("Optional rate for double-sided printing. If null, defaults to 2x click_rate.")
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Your cost per side (optional, for tracking profit)")
     )
-    minimum_order_quantity = models.PositiveIntegerField(
-        _("minimum order quantity"),
-        default=1,
-        help_text=_("Minimum number of impressions for this rate.")
-    )
-    is_active = models.BooleanField(
-        _("active"),
-        default=True
-    )
+    
+    is_active = models.BooleanField(_("active"), default=True)
 
     class Meta:
-        verbose_name = _("digital print price")
-        verbose_name_plural = _("digital print prices")
-        ordering = ["machine__name", "sheet_size"]
+        verbose_name = _("printing price")
+        verbose_name_plural = _("printing prices")
+        ordering = ["sheet_size", "color_mode"]
         constraints = [
             models.UniqueConstraint(
                 fields=["shop", "machine", "sheet_size", "color_mode"],
-                name="unique_print_price_per_shop_machine_size_color"
+                name="unique_printing_price"
             )
         ]
 
     def __str__(self):
-        return f"{self.machine.name} - {self.sheet_size} ({self.get_color_mode_display()}): {self.click_rate}"
-
-    @property
-    def effective_duplex_rate(self) -> Decimal:
-        """Return duplex rate or calculate from click rate."""
-        if self.duplex_rate:
-            return self.duplex_rate
-        return self.click_rate * 2
-
-    def calculate_cost(self, quantity: int, duplex: bool = False) -> Decimal:
-        """Calculate total printing cost for given quantity."""
-        rate = self.effective_duplex_rate if duplex else self.click_rate
-        return rate * max(quantity, self.minimum_order_quantity)
-
-
-class MaterialPrice(TimeStampedModel):
-    """
-    Defines the selling price for materials/substrates.
-    Can use either fixed price or markup-based pricing.
-    """
+        return f"{self.sheet_size} {self.get_color_mode_display()}: KES {self.selling_price_per_side}/side"
     
-    class PricingMethod(models.TextChoices):
-        FIXED = "FIXED", _("Fixed Price")
-        MARKUP = "MARKUP", _("Markup on Cost")
-        MARGIN = "MARGIN", _("Profit Margin")
-
-    shop = models.ForeignKey(
-        Shop,
-        on_delete=models.CASCADE,
-        related_name="material_prices",
-        help_text=_("The shop this pricing belongs to.")
-    )
-    material = models.ForeignKey(
-        Material,
-        on_delete=models.PROTECT,
-        related_name="selling_prices",
-        help_text=_("The material this price applies to.")
-    )
-    pricing_method = models.CharField(
-        _("pricing method"),
-        max_length=20,
-        choices=PricingMethod.choices,
-        default=PricingMethod.FIXED
-    )
-    selling_price_per_unit = models.DecimalField(
-        _("selling price per unit"),
-        max_digits=14,
-        decimal_places=4,
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(Decimal("0.00"))],
-        help_text=_("Fixed selling price. Required if pricing method is FIXED.")
-    )
-    markup_percentage = models.DecimalField(
-        _("markup percentage"),
-        max_digits=6,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("1000"))],
-        help_text=_("Markup percentage on cost price (e.g., 50 for 50%). Used if method is MARKUP.")
-    )
-    margin_percentage = models.DecimalField(
-        _("margin percentage"),
-        max_digits=5,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("99.99"))],
-        help_text=_("Target profit margin (e.g., 30 for 30%). Used if method is MARGIN.")
-    )
-    minimum_order_value = models.DecimalField(
-        _("minimum order value"),
-        max_digits=10,
-        decimal_places=2,
-        default=Decimal("0"),
-        help_text=_("Minimum charge for this material.")
-    )
-    is_active = models.BooleanField(
-        _("active"),
-        default=True
-    )
-
-    class Meta:
-        verbose_name = _("material price")
-        verbose_name_plural = _("material prices")
-        ordering = ["material__name"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["shop", "material"],
-                name="unique_material_price_per_shop"
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.material.name}: {self.calculated_selling_price}"
-
     @property
-    def calculated_selling_price(self) -> Decimal:
-        """Calculate the effective selling price based on pricing method."""
-        if self.pricing_method == self.PricingMethod.FIXED:
-            return self.selling_price_per_unit or Decimal("0")
-        
-        cost = self.material.cost_per_unit
-        
-        if self.pricing_method == self.PricingMethod.MARKUP:
-            markup = self.markup_percentage or Decimal("0")
-            return cost * (1 + markup / 100)
-        
-        if self.pricing_method == self.PricingMethod.MARGIN:
-            margin = self.margin_percentage or Decimal("0")
-            if margin >= 100:
-                return cost * 10  # Fallback for invalid margin
-            return cost / (1 - margin / 100)
-        
-        return self.selling_price_per_unit or Decimal("0")
-
-    @property
-    def profit_per_unit(self) -> Decimal:
-        """Calculate profit per unit."""
-        return self.calculated_selling_price - self.material.cost_per_unit
-
-    @property
-    def effective_margin_percentage(self) -> Decimal:
-        """Calculate effective margin regardless of pricing method."""
-        selling = self.calculated_selling_price
-        if selling <= 0:
-            return Decimal("0")
-        return ((selling - self.material.cost_per_unit) / selling) * 100
-
-
-class FinishingPrice(TimeStampedModel):
-    """
-    Defines prices for finishing processes (lamination, binding, cutting, etc.).
-    """
+    def profit_per_side(self) -> Decimal:
+        """Profit per side printed."""
+        if self.buying_price_per_side:
+            return self.selling_price_per_side - self.buying_price_per_side
+        return Decimal("0")
     
-    class FinishingCategory(models.TextChoices):
-        LAMINATION = "LAMINATION", _("Lamination")
-        BINDING = "BINDING", _("Binding")
-        CUTTING = "CUTTING", _("Cutting")
-        CREASING = "CREASING", _("Creasing/Scoring")
-        FOLDING = "FOLDING", _("Folding")
-        OTHER = "OTHER", _("Other")
-
-    class PricingUnit(models.TextChoices):
-        PER_SHEET = "PER_SHEET", _("Per Sheet")
-        PER_SIDE = "PER_SIDE", _("Per Side (For Lamination)")
-        PER_JOB = "PER_JOB", _("Per Job (Flat Fee)")
-        PER_PIECE = "PER_PIECE", _("Per Finished Item")
-        PER_BATCH = "PER_BATCH", _("Per Batch")
-
-    shop = models.ForeignKey(
-        Shop,
-        on_delete=models.CASCADE,
-        related_name="finishing_prices"
-    )
-    process_name = models.CharField(
-        _("process name"),
-        max_length=150,
-        help_text=_("e.g., 'Matt Lamination SRA3', 'Saddle Stitch Binding'")
-    )
-    description = models.TextField(
-        _("description"),
-        blank=True,
-        help_text=_("Description of the finishing process for customers")
-    )
-    category = models.CharField(
-        _("category"),
-        max_length=30,
-        choices=FinishingCategory.choices,
-        default=FinishingCategory.OTHER
-    )
-    unit = models.CharField(
-        _("pricing unit"),
-        max_length=20,
-        choices=PricingUnit.choices,
-        default=PricingUnit.PER_SHEET
-    )
-    price = models.DecimalField(
-        _("price"),
-        max_digits=10,
-        decimal_places=2,
-        help_text=_("Base price per unit.")
-    )
-    batch_size = models.PositiveIntegerField(
-        _("batch size"),
-        default=1,
-        help_text=_("If unit is 'Per Batch', define size (e.g., 1000 for 'per 1000 sheets').")
-    )
-    setup_fee = models.DecimalField(
-        _("setup fee"),
-        max_digits=10,
-        decimal_places=2,
-        default=Decimal("0"),
-        help_text=_("One-time setup fee.")
-    )
-    minimum_order_quantity = models.PositiveIntegerField(
-        _("minimum order quantity"),
-        default=1
-    )
-    # Mandatory/Optional flags
-    is_mandatory = models.BooleanField(
-        _("mandatory"),
-        default=False,
-        help_text=_("If true, this finishing is always applied to applicable jobs")
-    )
-    is_default_selected = models.BooleanField(
-        _("default selected"),
-        default=False,
-        help_text=_("If true, this is pre-selected for optional finishing")
-    )
-    is_active = models.BooleanField(
-        _("active"),
-        default=True
-    )
-
-    class Meta:
-        verbose_name = _("finishing price")
-        verbose_name_plural = _("finishing prices")
-        ordering = ["category", "process_name"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["shop", "process_name"],
-                name="unique_finishing_price_per_shop"
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.process_name}: {self.price} {self.get_unit_display()}"
-
-    def calculate_cost(self, quantity: int = 1, include_setup: bool = True) -> Decimal:
-        """Calculate total cost for finishing process."""
-        import math
-        
-        qty = max(quantity, self.minimum_order_quantity)
-        
-        if self.unit == self.PricingUnit.PER_BATCH:
-            # Ceiling division for batches (guard against zero batch_size)
-            effective_batch = max(1, self.batch_size)
-            batches = math.ceil(qty / effective_batch)
-            total = self.price * batches
-        elif self.unit == self.PricingUnit.PER_JOB:
-            total = self.price
-        else:
-            total = self.price * qty
-        
-        if include_setup:
-            total += self.setup_fee
-        
-        return total
-
-
-class PricingTier(TimeStampedModel):
-    """
-    Handles bulk/tiered pricing for finishing services.
-    Example: 
-    - Binding 1-50 books: 50 KSH each
-    - Binding 51-100 books: 40 KSH each
-    - Binding 101+: 30 KSH each
-    """
-    
-    finishing_service = models.ForeignKey(
-        FinishingPrice,
-        on_delete=models.CASCADE,
-        related_name="tiers"
-    )
-    min_quantity = models.PositiveIntegerField(
-        _("min quantity"),
-        default=1,
-        help_text=_("Start of the quantity range.")
-    )
-    max_quantity = models.PositiveIntegerField(
-        _("max quantity"),
-        null=True,
-        blank=True,
-        help_text=_("End of the quantity range. Leave blank for unlimited (e.g., 100+).")
-    )
-    price_per_unit = models.DecimalField(
-        _("price per unit"),
-        max_digits=10,
-        decimal_places=2,
-        help_text=_("The rate applied within this range.")
-    )
-
-    class Meta:
-        verbose_name = _("pricing tier")
-        verbose_name_plural = _("pricing tiers")
-        ordering = ["finishing_service", "min_quantity"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["finishing_service", "min_quantity"],
-                name="unique_tier_start_per_service"
-            )
-        ]
-
-    def __str__(self):
-        max_display = self.max_quantity or "∞"
-        return f"{self.finishing_service.process_name}: {self.min_quantity}-{max_display} @ {self.price_per_unit}"
-
-
-class VolumeDiscount(TimeStampedModel):
-    """
-    Volume-based discounts that can apply to print or material pricing.
-    """
-    
-    class DiscountType(models.TextChoices):
-        PERCENTAGE = "PERCENTAGE", _("Percentage Off")
-        FIXED_RATE = "FIXED_RATE", _("Fixed Rate Override")
-        AMOUNT_OFF = "AMOUNT_OFF", _("Fixed Amount Off")
-
-    shop = models.ForeignKey(
-        Shop,
-        on_delete=models.CASCADE,
-        related_name="volume_discounts"
-    )
-    name = models.CharField(
-        _("discount name"),
-        max_length=100,
-        help_text=_("e.g., 'Bulk Print Discount', '500+ Sheets'")
-    )
-    minimum_quantity = models.PositiveIntegerField(
-        _("minimum quantity"),
-        help_text=_("Minimum quantity to trigger this discount.")
-    )
-    maximum_quantity = models.PositiveIntegerField(
-        _("maximum quantity"),
-        null=True,
-        blank=True,
-        help_text=_("Maximum quantity for this tier. Leave blank for unlimited.")
-    )
-    discount_type = models.CharField(
-        _("discount type"),
-        max_length=20,
-        choices=DiscountType.choices,
-        default=DiscountType.PERCENTAGE
-    )
-    discount_value = models.DecimalField(
-        _("discount value"),
-        max_digits=10,
-        decimal_places=2,
-        help_text=_("Percentage, fixed rate, or amount based on discount type.")
-    )
-    applies_to_print = models.BooleanField(
-        _("applies to print"),
-        default=True
-    )
-    applies_to_material = models.BooleanField(
-        _("applies to material"),
-        default=False
-    )
-    applies_to_finishing = models.BooleanField(
-        _("applies to finishing"),
-        default=False
-    )
-    is_active = models.BooleanField(
-        _("active"),
-        default=True
-    )
-
-    class Meta:
-        verbose_name = _("volume discount")
-        verbose_name_plural = _("volume discounts")
-        ordering = ["minimum_quantity"]
-
-    def __str__(self):
-        return f"{self.name}: {self.discount_value} ({self.get_discount_type_display()})"
-
-    def apply_discount(self, base_price: Decimal) -> Decimal:
-        """Apply discount to a base price and return discounted price."""
-        if self.discount_type == self.DiscountType.PERCENTAGE:
-            discounted = base_price * (1 - self.discount_value / 100)
-            return max(discounted, Decimal("0"))
-        elif self.discount_type == self.DiscountType.FIXED_RATE:
-            return max(self.discount_value, Decimal("0"))
-        elif self.discount_type == self.DiscountType.AMOUNT_OFF:
-            return max(base_price - self.discount_value, Decimal("0"))
-        return base_price
+    def get_price_for_sides(self, sides: int = 1) -> Decimal:
+        """Get price for 1 or 2 sides."""
+        return self.selling_price_per_side * sides
 
 
 # =============================================================================
-# Pricing engine (centralized rates + instant quote)
+# PAPER PRICES - What you charge for paper by GSM
 # =============================================================================
 
-
-class PaperGSMPrice(TimeStampedModel):
+class PaperPrice(TimeStampedModel):
     """
-    Simple, customer-friendly paper pricing by GSM (paper weight).
+    Simple paper pricing by weight (GSM).
     
-    This model allows shop owners to set transparent prices that customers
-    can easily understand:
-    - 130 GSM = KES 10
-    - 150 GSM = KES 15
-    - 170 GSM = KES 17
-    - 200 GSM = KES 20
-    - 250 GSM = KES 25
-    - 300 GSM = KES 30
-    etc.
+    Example rate card:
+    - 130 GSM: Buy KES 6, Sell KES 10
+    - 150 GSM: Buy KES 9, Sell KES 15
+    - 200 GSM: Buy KES 12, Sell KES 20
+    - 300 GSM: Buy KES 18, Sell KES 30
     
-    Total price = Print price (per side from DigitalPrintPrice) + Paper price (from this model)
+    Total = Printing Price + Paper Price
     """
     
     class SheetSize(models.TextChoices):
-        A4 = "A4", _("A4 (210 x 297 mm)")
-        A3 = "A3", _("A3 (297 x 420 mm)")
-        SRA3 = "SRA3", _("SRA3 (320 x 450 mm)")
-        SRA4 = "SRA4", _("SRA4 (225 x 320 mm)")
-        A5 = "A5", _("A5 (148 x 210 mm)")
-        LETTER = "LETTER", _("Letter (8.5 x 11 in)")
-        LEGAL = "LEGAL", _("Legal (8.5 x 14 in)")
-        TABLOID = "TABLOID", _("Tabloid (11 x 17 in)")
+        A5 = "A5", _("A5")
+        A4 = "A4", _("A4")
+        A3 = "A3", _("A3")
+        SRA3 = "SRA3", _("SRA3")
     
-    # Common GSM choices for quick selection
-    class CommonGSM(models.IntegerChoices):
-        GSM_80 = 80, _("80 gsm (Standard Copy)")
-        GSM_100 = 100, _("100 gsm")
-        GSM_120 = 120, _("120 gsm")
-        GSM_130 = 130, _("130 gsm")
-        GSM_150 = 150, _("150 gsm")
-        GSM_170 = 170, _("170 gsm")
-        GSM_200 = 200, _("200 gsm")
-        GSM_250 = 250, _("250 gsm")
-        GSM_300 = 300, _("300 gsm")
-        GSM_350 = 350, _("350 gsm")
-    
+    class PaperType(models.TextChoices):
+        GLOSS = "GLOSS", _("Gloss")
+        MATTE = "MATTE", _("Matte")
+        BOND = "BOND", _("Bond")
+        ART = "ART", _("Art Paper")
+
     shop = models.ForeignKey(
         Shop,
         on_delete=models.CASCADE,
-        related_name="paper_gsm_prices",
-        help_text=_("The shop this pricing belongs to.")
+        related_name="paper_prices"
     )
     sheet_size = models.CharField(
-        _("sheet size"),
+        _("paper size"),
         max_length=20,
         choices=SheetSize.choices,
-        default=SheetSize.A3,
-        help_text=_("Paper size this price applies to.")
+        default=SheetSize.A3
     )
     gsm = models.PositiveIntegerField(
-        _("GSM (paper weight)"),
+        _("GSM (weight)"),
         validators=[MinValueValidator(60), MaxValueValidator(500)],
-        help_text=_("Paper weight in grams per square meter (e.g., 130, 150, 200, 300).")
+        help_text=_("Paper weight: 80, 130, 150, 200, 300, etc.")
     )
     paper_type = models.CharField(
         _("paper type"),
-        max_length=100,
-        default="Gloss",
-        help_text=_("Type of paper (e.g., Gloss, Matte, Bond, Art Paper).")
+        max_length=20,
+        choices=PaperType.choices,
+        default=PaperType.GLOSS
     )
-    price_per_sheet = models.DecimalField(
-        _("price per sheet"),
+    
+    # Simple pricing - clear terminology
+    buying_price = models.DecimalField(
+        _("buying price"),
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("What YOU pay per sheet")
+    )
+    selling_price = models.DecimalField(
+        _("selling price"),
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.01"))],
-        help_text=_("Customer price per sheet for this GSM paper.")
+        help_text=_("What CUSTOMER pays per sheet")
     )
-    cost_per_sheet = models.DecimalField(
-        _("cost per sheet"),
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(Decimal("0.00"))],
-        help_text=_("Your cost price (optional, for profit tracking).")
-    )
-    is_active = models.BooleanField(
-        _("active"),
-        default=True
-    )
+    
+    is_active = models.BooleanField(_("active"), default=True)
 
     class Meta:
-        verbose_name = _("paper price (GSM)")
-        verbose_name_plural = _("paper prices (GSM)")
+        verbose_name = _("paper price")
+        verbose_name_plural = _("paper prices")
         ordering = ["sheet_size", "gsm"]
         constraints = [
             models.UniqueConstraint(
                 fields=["shop", "sheet_size", "gsm", "paper_type"],
-                name="unique_paper_price_per_shop_size_gsm_type"
+                name="unique_paper_price"
             )
         ]
 
     def __str__(self):
-        return f"{self.sheet_size} {self.gsm}gsm {self.paper_type}: KES {self.price_per_sheet}"
+        return f"{self.sheet_size} {self.gsm}gsm {self.get_paper_type_display()}: KES {self.selling_price}"
     
     @property
-    def profit_per_sheet(self) -> Decimal:
-        """Calculate profit per sheet if cost is set."""
-        if self.cost_per_sheet:
-            return self.price_per_sheet - self.cost_per_sheet
-        return Decimal("0")
+    def profit(self) -> Decimal:
+        """Profit per sheet."""
+        return self.selling_price - self.buying_price
     
     @property
-    def margin_percentage(self) -> Decimal:
-        """Calculate margin percentage if cost is set."""
-        if self.cost_per_sheet and self.price_per_sheet > 0:
-            return ((self.price_per_sheet - self.cost_per_sheet) / self.price_per_sheet) * 100
+    def margin_percent(self) -> Decimal:
+        """Profit margin as percentage."""
+        if self.selling_price > 0:
+            return ((self.selling_price - self.buying_price) / self.selling_price) * 100
         return Decimal("0")
+
+
+# =============================================================================
+# FINISHING PRICES - Lamination, Binding, Cutting, etc.
+# =============================================================================
+
+class FinishingService(TimeStampedModel):
+    """
+    Finishing services with simple pricing.
     
-    @classmethod
-    def calculate_total_price(
-        cls,
+    Examples:
+    - Matt Lamination A3: KES 5 per sheet
+    - Binding (Spiral): KES 50 per book
+    - Cutting: KES 30 per job
+    """
+    
+    class Category(models.TextChoices):
+        LAMINATION = "LAMINATION", _("Lamination")
+        BINDING = "BINDING", _("Binding")
+        CUTTING = "CUTTING", _("Cutting")
+        FOLDING = "FOLDING", _("Folding")
+        OTHER = "OTHER", _("Other")
+    
+    class ChargeBy(models.TextChoices):
+        PER_SHEET = "PER_SHEET", _("Per Sheet")
+        PER_PIECE = "PER_PIECE", _("Per Piece/Item")
+        PER_JOB = "PER_JOB", _("Per Job (Flat Fee)")
+
+    shop = models.ForeignKey(
+        Shop,
+        on_delete=models.CASCADE,
+        related_name="finishing_services"
+    )
+    name = models.CharField(
+        _("service name"),
+        max_length=100,
+        help_text=_("e.g., Matt Lamination A3, Spiral Binding")
+    )
+    category = models.CharField(
+        _("category"),
+        max_length=20,
+        choices=Category.choices,
+        default=Category.OTHER
+    )
+    charge_by = models.CharField(
+        _("charge by"),
+        max_length=20,
+        choices=ChargeBy.choices,
+        default=ChargeBy.PER_SHEET
+    )
+    
+    # Simple pricing
+    buying_price = models.DecimalField(
+        _("buying price"),
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0"),
+        help_text=_("Your cost (if any)")
+    )
+    selling_price = models.DecimalField(
+        _("selling price"),
+        max_digits=10,
+        decimal_places=2,
+        help_text=_("Price customer pays")
+    )
+    
+    # Optional: pre-selected for certain products
+    is_default = models.BooleanField(
+        _("selected by default"),
+        default=False,
+        help_text=_("Pre-select this option for customers")
+    )
+    is_active = models.BooleanField(_("active"), default=True)
+
+    class Meta:
+        verbose_name = _("finishing service")
+        verbose_name_plural = _("finishing services")
+        ordering = ["category", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shop", "name"],
+                name="unique_finishing_service"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name}: KES {self.selling_price} {self.get_charge_by_display()}"
+    
+    @property
+    def profit(self) -> Decimal:
+        """Profit per unit."""
+        return self.selling_price - self.buying_price
+    
+    def calculate_total(self, quantity: int = 1) -> Decimal:
+        """Calculate total for given quantity."""
+        if self.charge_by == self.ChargeBy.PER_JOB:
+            return self.selling_price
+        return self.selling_price * quantity
+
+
+# =============================================================================
+# SIMPLE PRICE CALCULATOR - Combines everything
+# =============================================================================
+
+class PriceCalculator:
+    """
+    Helper class to calculate total price.
+    
+    Formula:
+    Total = (Printing × Sides × Sheets) + (Paper × Sheets) + Finishing
+    
+    Example: 100 A3 sheets, 300gsm, double-sided, with lamination
+    - Printing: 15 × 2 × 100 = 3,000
+    - Paper: 30 × 100 = 3,000  
+    - Lamination: 5 × 100 = 500
+    - Total: 6,500
+    """
+    
+    @staticmethod
+    def calculate(
         shop,
         sheet_size: str,
         gsm: int,
         quantity: int,
         sides: int = 1,
-        print_price_per_side: Decimal = None,
-        paper_type: str = "Gloss"
+        paper_type: str = "GLOSS",
+        finishing_ids: list = None,
+        machine_id: int = None
     ) -> dict:
         """
-        Calculate total price for a print job.
+        Calculate total price with breakdown.
         
-        Formula: Total = (Print price × sides × quantity) + (Paper price × quantity)
-        
-        Args:
-            shop: The shop instance
-            sheet_size: Paper size (A3, A4, etc.)
-            gsm: Paper weight
-            quantity: Number of sheets
-            sides: 1 for single-sided, 2 for double-sided
-            print_price_per_side: Override print price (optional)
-            paper_type: Type of paper (default: Gloss)
-        
-        Returns:
-            dict with breakdown: print_cost, paper_cost, total, unit_price
+        Returns dict with:
+        - printing_price, paper_price, finishing_price
+        - total_printing, total_paper, total_finishing
+        - grand_total, price_per_sheet
         """
+        result = {
+            "quantity": quantity,
+            "sides": sides,
+            "printing_price_per_side": Decimal("0"),
+            "paper_price_per_sheet": Decimal("0"),
+            "total_printing": Decimal("0"),
+            "total_paper": Decimal("0"),
+            "total_finishing": Decimal("0"),
+            "finishing_breakdown": [],
+            "grand_total": Decimal("0"),
+            "price_per_sheet": Decimal("0"),
+        }
+        
+        # Get printing price
+        printing_filter = {
+            "shop": shop,
+            "sheet_size": sheet_size,
+            "is_active": True
+        }
+        if machine_id:
+            printing_filter["machine_id"] = machine_id
+            
+        printing = PrintingPrice.objects.filter(**printing_filter).first()
+        if printing:
+            result["printing_price_per_side"] = printing.selling_price_per_side
+            result["total_printing"] = printing.selling_price_per_side * sides * quantity
+        
         # Get paper price
         try:
-            paper_price_obj = cls.objects.get(
+            paper = PaperPrice.objects.get(
                 shop=shop,
                 sheet_size=sheet_size,
                 gsm=gsm,
                 paper_type=paper_type,
                 is_active=True
             )
-            paper_price = paper_price_obj.price_per_sheet
-        except cls.DoesNotExist:
-            paper_price = Decimal("0")
+            result["paper_price_per_sheet"] = paper.selling_price
+            result["total_paper"] = paper.selling_price * quantity
+        except PaperPrice.DoesNotExist:
+            pass
         
-        # Get print price if not provided
-        if print_price_per_side is None:
-            try:
-                print_price_obj = DigitalPrintPrice.objects.filter(
-                    shop=shop,
-                    sheet_size=sheet_size,
-                    is_active=True
-                ).first()
-                print_price_per_side = print_price_obj.click_rate if print_price_obj else Decimal("0")
-            except Exception:
-                print_price_per_side = Decimal("0")
+        # Get finishing prices
+        if finishing_ids:
+            finishes = FinishingService.objects.filter(
+                shop=shop,
+                id__in=finishing_ids,
+                is_active=True
+            )
+            for finish in finishes:
+                cost = finish.calculate_total(quantity)
+                result["finishing_breakdown"].append({
+                    "name": finish.name,
+                    "price": finish.selling_price,
+                    "charge_by": finish.charge_by,
+                    "total": cost
+                })
+                result["total_finishing"] += cost
         
-        # Calculate costs
-        print_cost = print_price_per_side * sides * quantity
-        paper_cost = paper_price * quantity
-        total = print_cost + paper_cost
-        unit_price = (print_price_per_side * sides) + paper_price
+        # Calculate totals
+        result["grand_total"] = (
+            result["total_printing"] + 
+            result["total_paper"] + 
+            result["total_finishing"]
+        )
         
-        return {
-            "print_price_per_side": print_price_per_side,
-            "paper_price_per_sheet": paper_price,
-            "sides": sides,
-            "quantity": quantity,
-            "print_cost": print_cost,
-            "paper_cost": paper_cost,
-            "total": total,
-            "unit_price": unit_price,
-            "breakdown_text": f"Print: {print_price_per_side} × {sides} side(s) = {print_price_per_side * sides} | "
-                             f"Paper ({gsm}gsm): {paper_price} | "
-                             f"Per sheet: {unit_price} | "
-                             f"Total ({quantity} sheets): {total}"
-        }
+        if quantity > 0:
+            result["price_per_sheet"] = result["grand_total"] / quantity
+        
+        return result
 
 
-class PricingVariable(TimeStampedModel):
+# =============================================================================
+# LEGACY COMPATIBILITY - Keep old models working during transition
+# =============================================================================
+
+# Alias for backward compatibility with existing code
+DigitalPrintPrice = PrintingPrice
+PaperGSMPrice = PaperPrice
+FinishingPrice = FinishingService
+
+
+# =============================================================================
+# OPTIONAL: Volume Discounts (Advanced Feature)
+# =============================================================================
+
+class VolumeDiscount(TimeStampedModel):
     """
-    Centralized rates that apply everywhere instantly.
-    e.g. "Digital Print Margin", "global-margin".
+    Optional bulk discounts.
+    
+    Example: 10% off orders over 500 sheets
     """
-
+    
+    shop = models.ForeignKey(
+        Shop,
+        on_delete=models.CASCADE,
+        related_name="volume_discounts"
+    )
     name = models.CharField(
         _("name"),
         max_length=100,
-        help_text=_("e.g., Digital Print Margin"),
+        help_text=_("e.g., Bulk Order 10% Off")
     )
-    key = models.SlugField(
-        _("key"),
-        unique=True,
-        max_length=100,
-        help_text=_("Unique identifier, e.g. global-margin"),
+    min_quantity = models.PositiveIntegerField(
+        _("minimum quantity"),
+        default=100,
+        help_text=_("Minimum sheets/items to qualify")
     )
-    value = models.DecimalField(
-        _("value"),
-        max_digits=10,
-        decimal_places=4,
-    )
-    last_updated = models.DateTimeField(
-        _("last updated"),
-        auto_now=True,
-    )
-
-    class Meta:
-        verbose_name = _("pricing variable")
-        verbose_name_plural = _("pricing variables")
-        ordering = ["key"]
-
-    def __str__(self) -> str:
-        return f"{self.name}: {self.value}"
-
-
-class RawMaterial(TimeStampedModel):
-    """Physical components like Paper, Vinyl, or PP Film."""
-
-    class UnitMeasure(models.TextChoices):
-        M2 = "m2", _("Square Meter")
-        SHEET = "sheet", _("Sheet")
-
-    material_type = models.CharField(
-        _("material type"),
-        max_length=100,
-    )
-    cost_per_unit = models.DecimalField(
-        _("cost per unit"),
-        max_digits=10,
+    discount_percent = models.DecimalField(
+        _("discount %"),
+        max_digits=5,
         decimal_places=2,
+        default=Decimal("10"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
+        help_text=_("Percentage discount (e.g., 10 for 10%)")
     )
-    unit_measure = models.CharField(
-        _("unit measure"),
-        max_length=20,
-        choices=UnitMeasure.choices,
-    )
+    is_active = models.BooleanField(_("active"), default=True)
 
     class Meta:
-        verbose_name = _("raw material")
-        verbose_name_plural = _("raw materials")
-        ordering = ["material_type"]
+        verbose_name = _("volume discount")
+        verbose_name_plural = _("volume discounts")
+        ordering = ["min_quantity"]
 
-    def __str__(self) -> str:
-        return f"{self.material_type} ({self.get_unit_measure_display()})"
-
-    def calculate_cost(self, quantity) -> Decimal:
-        """Compute base material cost before margins."""
-        return self.cost_per_unit * Decimal(str(quantity))
-
-
-class FinishingOption(TimeStampedModel):
-    """Additional processes like Lamination, Eyelets, or Stands."""
-
-    process_name = models.CharField(
-        _("process name"),
-        max_length=100,
-    )
-    setup_fee = models.DecimalField(
-        _("setup fee"),
-        max_digits=10,
-        decimal_places=2,
-        default=Decimal("0"),
-    )
-    unit_cost = models.DecimalField(
-        _("unit cost"),
-        max_digits=10,
-        decimal_places=2,
-    )
-
-    class Meta:
-        verbose_name = _("finishing option")
-        verbose_name_plural = _("finishing options")
-        ordering = ["process_name"]
-
-    def __str__(self) -> str:
-        return self.process_name
-
-    def get_total_finishing_cost(self, quantity) -> Decimal:
-        """Calculate total for this specific finishing process."""
-        return self.setup_fee + (self.unit_cost * Decimal(str(quantity)))
-
-
-class PricingEngine(TimeStampedModel):
-    """
-    Combines material + finishing + central margins for an instant quote.
-    """
-
-    product_name = models.CharField(
-        _("product name"),
-        max_length=255,
-    )
-    material = models.ForeignKey(
-        RawMaterial,
-        on_delete=models.PROTECT,
-        related_name="pricing_engines",
-    )
-    finishes = models.ManyToManyField(
-        FinishingOption,
-        blank=True,
-        related_name="pricing_engines",
-        verbose_name=_("finishes"),
-    )
-
-    class Meta:
-        verbose_name = _("pricing engine")
-        verbose_name_plural = _("pricing engines")
-        ordering = ["product_name"]
-
-    def __str__(self) -> str:
-        return self.product_name
-
-    def generate_instant_quote(self, quantity: int, area_m2: float = 1) -> Decimal:
-        """Combine material + finishing + central margins."""
-        m_cost = self.material.calculate_cost(Decimal(str(area_m2 * quantity)))
-        f_cost = sum(
-            f.get_total_finishing_cost(quantity) for f in self.finishes.all()
-        )
-        try:
-            margin_var = PricingVariable.objects.get(key="global-margin")
-            margin = margin_var.value
-        except PricingVariable.DoesNotExist:
-            margin = Decimal("0")
-        return (m_cost + f_cost) * (1 + margin)
+    def __str__(self):
+        return f"{self.name}: {self.discount_percent}% off for {self.min_quantity}+ items"
+    
+    def apply(self, total: Decimal) -> Decimal:
+        """Apply discount to total."""
+        discount = total * (self.discount_percent / 100)
+        return total - discount

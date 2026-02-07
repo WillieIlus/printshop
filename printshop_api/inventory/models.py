@@ -1,4 +1,13 @@
 # inventory/models.py
+"""
+Simplified inventory models for print shop.
+
+Two main things a print shop needs to track:
+1. Machines - The printers/equipment
+2. Paper Stock - What paper sizes are available
+
+For pricing, use the pricing app (PaperPrice, PrintingPrice, etc.)
+"""
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -10,37 +19,52 @@ from shops.models import Shop
 
 class Machine(TimeStampedModel):
     """
-    Represents physical hardware in the print shop.
+    Printing machines/equipment.
+    
+    Examples:
+    - Xerox Versant 80 (Digital Printer)
+    - Canon ImagePRESS (Digital Printer)
+    - Laminator
     """
+    
     class MachineType(models.TextChoices):
-        DIGITAL_PRINTER = "DIGITAL_PRINTER", _("Digital Printer (Laser/Inkjet)")
-        LARGE_FORMAT = "LARGE_FORMAT", _("Large Format Printer")
-        PLOTTER = "PLOTTER", _("Plotter / Cutter")
+        DIGITAL = "DIGITAL", _("Digital Printer")
+        LARGE_FORMAT = "LARGE_FORMAT", _("Large Format")
         OFFSET = "OFFSET", _("Offset Press")
         FINISHING = "FINISHING", _("Finishing Equipment")
 
     shop = models.ForeignKey(
         Shop,
-        on_delete=models.PROTECT,
-        related_name="machines",
-        help_text=_("The shop that owns this machine.")
+        on_delete=models.CASCADE,
+        related_name="machines"
     )
     name = models.CharField(
         _("machine name"),
         max_length=150,
-        help_text=_("Internal identifier, e.g., 'Xerox Versant 80'.")
+        help_text=_("e.g., Xerox Versant 80")
     )
-    type = models.CharField(
-        _("machine type"),
-        max_length=30,
+    machine_type = models.CharField(
+        _("type"),
+        max_length=20,
         choices=MachineType.choices,
-        default=MachineType.DIGITAL_PRINTER
+        default=MachineType.DIGITAL
     )
-    is_active = models.BooleanField(
-        _("active"),
-        default=True,
-        help_text=_("If false, this machine will not be available for new jobs.")
+    
+    # Optional specs
+    max_paper_width = models.PositiveIntegerField(
+        _("max width (mm)"),
+        null=True,
+        blank=True,
+        help_text=_("Maximum paper width this machine can handle")
     )
+    max_paper_height = models.PositiveIntegerField(
+        _("max height (mm)"),
+        null=True,
+        blank=True,
+        help_text=_("Maximum paper height this machine can handle")
+    )
+    
+    is_active = models.BooleanField(_("active"), default=True)
 
     class Meta:
         verbose_name = _("machine")
@@ -54,13 +78,144 @@ class Machine(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.name} ({self.get_type_display()})"
+        return f"{self.name}"
 
 
+class PaperStock(TimeStampedModel):
+    """
+    Paper stock in inventory.
+    
+    Tracks what paper sizes and types are available.
+    For complex jobs that need imposition calculations.
+    
+    Examples:
+    - SRA3 300gsm Gloss (100 sheets in stock)
+    - A3 130gsm Matte (500 sheets in stock)
+    """
+    
+    class SheetSize(models.TextChoices):
+        A5 = "A5", _("A5 (148 × 210 mm)")
+        A4 = "A4", _("A4 (210 × 297 mm)")
+        A3 = "A3", _("A3 (297 × 420 mm)")
+        SRA3 = "SRA3", _("SRA3 (320 × 450 mm)")
+        SRA4 = "SRA4", _("SRA4 (225 × 320 mm)")
+    
+    class PaperType(models.TextChoices):
+        GLOSS = "GLOSS", _("Gloss")
+        MATTE = "MATTE", _("Matte")
+        BOND = "BOND", _("Bond")
+        ART = "ART", _("Art Paper")
+
+    shop = models.ForeignKey(
+        Shop,
+        on_delete=models.CASCADE,
+        related_name="paper_stock"
+    )
+    sheet_size = models.CharField(
+        _("paper size"),
+        max_length=20,
+        choices=SheetSize.choices,
+        default=SheetSize.SRA3
+    )
+    gsm = models.PositiveIntegerField(
+        _("GSM (weight)"),
+        help_text=_("Paper weight: 80, 130, 150, 200, 300, etc.")
+    )
+    paper_type = models.CharField(
+        _("paper type"),
+        max_length=20,
+        choices=PaperType.choices,
+        default=PaperType.GLOSS
+    )
+    
+    # Dimensions (auto-filled based on sheet_size, or custom)
+    width_mm = models.PositiveIntegerField(
+        _("width (mm)"),
+        help_text=_("Width in millimeters")
+    )
+    height_mm = models.PositiveIntegerField(
+        _("height (mm)"),
+        help_text=_("Height in millimeters")
+    )
+    
+    # Stock tracking
+    quantity_in_stock = models.PositiveIntegerField(
+        _("quantity in stock"),
+        default=0,
+        help_text=_("Number of sheets currently in stock")
+    )
+    reorder_level = models.PositiveIntegerField(
+        _("reorder level"),
+        default=100,
+        help_text=_("Order more when stock falls below this level")
+    )
+    
+    # Cost tracking (optional)
+    buying_price_per_sheet = models.DecimalField(
+        _("buying price per sheet"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Your cost per sheet")
+    )
+    
+    is_active = models.BooleanField(_("active"), default=True)
+
+    class Meta:
+        verbose_name = _("paper stock")
+        verbose_name_plural = _("paper stocks")
+        ordering = ["sheet_size", "gsm"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shop", "sheet_size", "gsm", "paper_type"],
+                name="unique_paper_stock"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.get_sheet_size_display()} {self.gsm}gsm {self.get_paper_type_display()} ({self.quantity_in_stock} sheets)"
+    
+    def save(self, *args, **kwargs):
+        # Auto-fill dimensions based on sheet size
+        size_dimensions = {
+            "A5": (148, 210),
+            "A4": (210, 297),
+            "A3": (297, 420),
+            "SRA3": (320, 450),
+            "SRA4": (225, 320),
+        }
+        if self.sheet_size in size_dimensions and not self.width_mm:
+            self.width_mm, self.height_mm = size_dimensions[self.sheet_size]
+        super().save(*args, **kwargs)
+    
+    @property
+    def needs_reorder(self) -> bool:
+        """Check if stock needs to be reordered."""
+        return self.quantity_in_stock <= self.reorder_level
+    
+    @property
+    def display_name(self) -> str:
+        """Display name for dropdowns."""
+        return f"{self.sheet_size} {self.gsm}gsm {self.paper_type}"
+
+
+# =============================================================================
+# LEGACY COMPATIBILITY - Keep old model names working
+# =============================================================================
+
+# Aliases for backward compatibility with existing code
+Material = PaperStock
+MaterialStock = PaperStock
+
+
+# Legacy model for complex material definitions (deprecated)
 class MachineCapability(TimeStampedModel):
     """
-    Defines the physical constraints and handling capabilities of a machine.
+    DEPRECATED: Use Machine.max_paper_width/height instead.
+    Keeping for migration compatibility.
     """
+    
     class FeedType(models.TextChoices):
         SHEET_FED = "SHEET_FED", _("Sheet Fed")
         ROLL_FED = "ROLL_FED", _("Roll Fed")
@@ -72,157 +227,26 @@ class MachineCapability(TimeStampedModel):
         related_name="capabilities"
     )
     feed_type = models.CharField(
-        _("feed type"),
         max_length=20,
         choices=FeedType.choices,
         default=FeedType.SHEET_FED
     )
     max_width = models.DecimalField(
-        _("max width (mm)"),
         max_digits=10,
         decimal_places=2,
         null=True,
-        blank=True,
-        help_text=_("Maximum printable width in millimeters.")
+        blank=True
     )
     max_height = models.DecimalField(
-        _("max height (mm)"),
         max_digits=10,
         decimal_places=2,
         null=True,
-        blank=True,
-        help_text=_("Maximum printable height (length) in millimeters. Leave blank for unlimited rolls.")
+        blank=True
     )
-    
-    # Optional: Speed or capacity metrics could go here in future (e.g., sheets_per_hour)
 
     class Meta:
-        verbose_name = _("machine capability")
-        verbose_name_plural = _("machine capabilities")
-
-    def clean(self):
-        if self.feed_type == self.FeedType.SHEET_FED and (not self.max_width or not self.max_height):
-            raise ValidationError(_("Sheet fed machines require both max width and max height."))
-        if self.feed_type == self.FeedType.ROLL_FED and not self.max_width:
-            raise ValidationError(_("Roll fed machines require a max width."))
+        verbose_name = _("machine capability (legacy)")
+        verbose_name_plural = _("machine capabilities (legacy)")
 
     def __str__(self):
         return f"{self.machine.name} - {self.get_feed_type_display()}"
-
-
-class Material(TimeStampedModel):
-    """
-    Represents the substrate/media definition.
-    This defines the 'What' - e.g., 'Gloss Paper 150gsm'.
-    """
-    class MaterialType(models.TextChoices):
-        SHEET = "SHEET", _("Sheet (Paper/Card)")
-        ROLL = "ROLL", _("Roll (Vinyl/Banner/Canvas)")
-        RIGID = "RIGID", _("Rigid (Foamex/Dibond/Acrylic)")
-
-    class UnitType(models.TextChoices):
-        PER_SHEET = "PER_SHEET", _("Per Sheet")
-        PER_SQ_METER = "PER_SQ_METER", _("Per Square Meter")
-        PER_LINEAR_METER = "PER_LINEAR_METER", _("Per Linear Meter")
-
-    shop = models.ForeignKey(
-        Shop,
-        on_delete=models.PROTECT,
-        related_name="materials",
-        help_text=_("The shop that owns this material definition.")
-    )
-    name = models.CharField(
-        _("material name"),
-        max_length=150,
-        help_text=_("e.g., 'Gloss Paper 300gsm'")
-    )
-    type = models.CharField(
-        _("material type"),
-        max_length=20,
-        choices=MaterialType.choices,
-        default=MaterialType.SHEET
-    )
-    cost_per_unit = models.DecimalField(
-        _("cost per unit"),
-        max_digits=14,
-        decimal_places=4,
-        help_text=_("The cost price the shop pays for this material based on the unit type.")
-    )
-    unit_type = models.CharField(
-        _("cost unit"),
-        max_length=20,
-        choices=UnitType.choices,
-        default=UnitType.PER_SHEET
-    )
-    is_active = models.BooleanField(
-        _("active"),
-        default=True,
-        help_text=_("If false, this material is unavailable for new calculations.")
-    )
-
-    class Meta:
-        verbose_name = _("material")
-        verbose_name_plural = _("materials")
-        ordering = ["name"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["shop", "name"],
-                name="unique_material_name_per_shop"
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.name} ({self.get_unit_type_display()})"
-
-
-class MaterialStock(TimeStampedModel):
-    """
-    Represents specific stock sizes/variants of a Material.
-    Example: Material is 'Gloss 300gsm'. 
-    Stocks might be: 'SRA3 Sheet', 'A4 Sheet', or '1.3m Wide Roll'.
-    """
-    material = models.ForeignKey(
-        Material,
-        on_delete=models.CASCADE,
-        related_name="stock_variants"
-    )
-    label = models.CharField(
-        _("label"),
-        max_length=100,
-        help_text=_("e.g., 'SRA3', '1370mm Roll', '4x8ft Sheet'")
-    )
-    width = models.DecimalField(
-        _("width (mm)"),
-        max_digits=10,
-        decimal_places=2,
-        help_text=_("Width in millimeters.")
-    )
-    height = models.DecimalField(
-        _("height (mm)"),
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        help_text=_("Height in millimeters. Leave empty for Rolls.")
-    )
-    current_stock_level = models.IntegerField(
-        _("current stock"),
-        default=0,
-        help_text=_("Current quantity on hand (sheets or full rolls).")
-    )
-
-    class Meta:
-        verbose_name = _("material stock")
-        verbose_name_plural = _("material stocks")
-        ordering = ["label"]
-
-    def clean(self):
-        # Validation to ensure sheets have height
-        if self.material.type in [Material.MaterialType.SHEET, Material.MaterialType.RIGID] and not self.height:
-            raise ValidationError(_("Sheet and Rigid materials must have a defined height."))
-
-    def __str__(self):
-        dim = f"{self.width}mm"
-        if self.height:
-            dim += f" x {self.height}mm"
-        return f"{self.material.name} - {self.label} [{dim}]"

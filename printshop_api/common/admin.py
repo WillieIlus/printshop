@@ -11,8 +11,8 @@ class SuperuserOrTestimonialAddMixin:
     Use this mixin on all ModelAdmins (including Testimonial's) so the rule is consistent.
     """
 
-    def has_add_permission(self, request: HttpRequest, obj=None) -> bool:
-        base = super().has_add_permission(request, obj)
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        base = super().has_add_permission(request)
         if request.user.is_superuser:
             return base
         if self.model == Testimonial:

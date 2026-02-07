@@ -1,125 +1,50 @@
 # pricing/urls.py
+"""
+URL patterns for pricing API.
 
-from django.urls import path
-from .views import (
-    DigitalPrintPriceViewSet,
-    MaterialPriceViewSet,
-    FinishingPriceViewSet,
-    VolumeDiscountViewSet,
-    RateCardView,
-    CostCalculatorView,
-    PriceComparisonView,
-    # Simple/Customer-friendly pricing
-    PaperGSMPriceViewSet,
-    SimpleRateCardView,
-    SimplePriceCalculatorView,
-)
+Public endpoints (no auth required):
+- GET /api/shops/{slug}/rate-card/ - View rate card
+- POST /api/shops/{slug}/calculate-price/ - Calculate price
+
+Shop owner endpoints (auth required):
+- /api/shops/{slug}/pricing/printing/ - CRUD printing prices
+- /api/shops/{slug}/pricing/paper/ - CRUD paper prices
+- /api/shops/{slug}/pricing/finishing/ - CRUD finishing services
+- /api/shops/{slug}/pricing/discounts/ - CRUD volume discounts
+"""
+
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 
 app_name = "pricing"
 
-# ViewSet action mappings
-print_price_list = DigitalPrintPriceViewSet.as_view({
-    "get": "list",
-    "post": "create"
-})
-print_price_detail = DigitalPrintPriceViewSet.as_view({
-    "get": "retrieve",
-    "put": "update",
-    "patch": "partial_update",
-    "delete": "destroy"
-})
-print_price_by_machine = DigitalPrintPriceViewSet.as_view({
-    "get": "by_machine"
-})
+from .views import (
+    PrintingPriceViewSet,
+    PaperPriceViewSet,
+    FinishingServiceViewSet,
+    VolumeDiscountViewSet,
+    RateCardView,
+    CalculatePriceView,
+)
 
-material_price_list = MaterialPriceViewSet.as_view({
-    "get": "list",
-    "post": "create"
-})
-material_price_detail = MaterialPriceViewSet.as_view({
-    "get": "retrieve",
-    "put": "update",
-    "patch": "partial_update",
-    "delete": "destroy"
-})
-material_price_bulk = MaterialPriceViewSet.as_view({
-    "post": "bulk_update_markup"
-})
 
-finishing_price_list = FinishingPriceViewSet.as_view({
-    "get": "list",
-    "post": "create"
-})
-finishing_price_detail = FinishingPriceViewSet.as_view({
-    "get": "retrieve",
-    "put": "update",
-    "patch": "partial_update",
-    "delete": "destroy"
-})
-finishing_by_category = FinishingPriceViewSet.as_view({
-    "get": "by_category"
-})
+# Router for shop-scoped CRUD endpoints
+router = DefaultRouter()
+router.register(r"printing", PrintingPriceViewSet, basename="printing-price")
+router.register(r"paper", PaperPriceViewSet, basename="paper-price")
+router.register(r"finishing", FinishingServiceViewSet, basename="finishing-service")
+router.register(r"discounts", VolumeDiscountViewSet, basename="volume-discount")
 
-discount_list = VolumeDiscountViewSet.as_view({
-    "get": "list",
-    "post": "create"
-})
-discount_detail = VolumeDiscountViewSet.as_view({
-    "get": "retrieve",
-    "put": "update",
-    "patch": "partial_update",
-    "delete": "destroy"
-})
 
-# Simple Paper GSM Pricing
-paper_gsm_list = PaperGSMPriceViewSet.as_view({
-    "get": "list",
-    "post": "create"
-})
-paper_gsm_detail = PaperGSMPriceViewSet.as_view({
-    "get": "retrieve",
-    "put": "update",
-    "patch": "partial_update",
-    "delete": "destroy"
-})
-paper_gsm_by_size = PaperGSMPriceViewSet.as_view({
-    "get": "by_size"
-})
-
+# URL patterns
 urlpatterns = [
-    # Digital Print Prices
-    path("print/", print_price_list, name="print-price-list"),
-    path("print/<int:pk>/", print_price_detail, name="print-price-detail"),
-    path("print/by-machine/", print_price_by_machine, name="print-price-by-machine"),
-    
-    # Material Prices
-    path("materials/", material_price_list, name="material-price-list"),
-    path("materials/<int:pk>/", material_price_detail, name="material-price-detail"),
-    path("materials/bulk-markup/", material_price_bulk, name="material-price-bulk"),
-    
-    # Finishing Prices
-    path("finishing/", finishing_price_list, name="finishing-price-list"),
-    path("finishing/<int:pk>/", finishing_price_detail, name="finishing-price-detail"),
-    path("finishing/by-category/", finishing_by_category, name="finishing-by-category"),
-    
-    # Volume Discounts
-    path("discounts/", discount_list, name="discount-list"),
-    path("discounts/<int:pk>/", discount_detail, name="discount-detail"),
-    
-    # Composite Views (Complex)
+    # Shop pricing management (authenticated)
+    path("", include(router.urls)),
+]
+
+
+# Public URL patterns (to be included at shop level)
+public_urlpatterns = [
     path("rate-card/", RateCardView.as_view(), name="rate-card"),
-    path("calculate/", CostCalculatorView.as_view(), name="cost-calculator"),
-    path("compare/", PriceComparisonView.as_view(), name="price-comparison"),
-    
-    # Simple/Customer-Friendly Pricing (NEW)
-    # Paper GSM Prices - CRUD
-    path("paper-gsm/", paper_gsm_list, name="paper-gsm-list"),
-    path("paper-gsm/<int:pk>/", paper_gsm_detail, name="paper-gsm-detail"),
-    path("paper-gsm/by-size/", paper_gsm_by_size, name="paper-gsm-by-size"),
-    
-    # Simple Rate Card (Public - for customers)
-    path("simple-rate-card/", SimpleRateCardView.as_view(), name="simple-rate-card"),
-    
-    # Simple Calculator (Public - for customers)
-    path("simple-calculate/", SimplePriceCalculatorView.as_view(), name="simple-calculator"),
+    path("calculate-price/", CalculatePriceView.as_view(), name="calculate-price"),
 ]
