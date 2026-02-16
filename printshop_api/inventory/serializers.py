@@ -3,7 +3,7 @@
 from django.db import transaction
 from rest_framework import serializers
 
-from .models import Machine, MachineCapability, Material, MaterialStock
+from .models import Machine, MachineCapability, Material, MaterialStock, PaperStock
 
 
 # =============================================================================
@@ -47,11 +47,22 @@ class MachineCapabilitySerializer(serializers.ModelSerializer):
         return attrs
 
 
+class MachinePublicSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for public display (e.g. on shop detail page).
+    """
+    type_display = serializers.CharField(source="get_machine_type_display", read_only=True)
+
+    class Meta:
+        model = Machine
+        fields = ["id", "name", "machine_type", "type_display"]
+
+
 class MachineSerializer(serializers.ModelSerializer):
     """
     Main serializer for Machines, including read-only capabilities.
     """
-    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    type_display = serializers.CharField(source="get_machine_type_display", read_only=True)
     capabilities = MachineCapabilitySerializer(many=True, read_only=True)
 
     class Meta:
@@ -59,7 +70,7 @@ class MachineSerializer(serializers.ModelSerializer):
         fields = [
             "id", 
             "name", 
-            "type", 
+            "machine_type",
             "type_display", 
             "is_active", 
             "capabilities", 
@@ -172,6 +183,60 @@ class MaterialSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise serializers.ValidationError("A material with this name already exists.")
         return value
+
+    def create(self, validated_data):
+        validated_data["shop"] = self.context["shop"]
+        return super().create(validated_data)
+
+
+# =============================================================================
+# Paper Stock Serializers (works with actual PaperStock model)
+# =============================================================================
+
+class PaperStockSerializer(serializers.ModelSerializer):
+    """
+    Serializer for PaperStock - paper inventory (sheet_size, gsm, paper_type).
+    """
+    sheet_size_display = serializers.CharField(source="get_sheet_size_display", read_only=True)
+    paper_type_display = serializers.CharField(source="get_paper_type_display", read_only=True)
+    display_name = serializers.CharField(read_only=True)
+    needs_reorder = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = PaperStock
+        fields = [
+            "id",
+            "sheet_size",
+            "sheet_size_display",
+            "gsm",
+            "paper_type",
+            "paper_type_display",
+            "width_mm",
+            "height_mm",
+            "quantity_in_stock",
+            "reorder_level",
+            "buying_price_per_sheet",
+            "is_active",
+            "display_name",
+            "needs_reorder",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "width_mm", "height_mm", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        shop = self.context.get("shop")
+        if not shop:
+            return attrs
+        sheet_size = attrs.get("sheet_size", getattr(self.instance, "sheet_size", None))
+        gsm = attrs.get("gsm", getattr(self.instance, "gsm", None))
+        paper_type = attrs.get("paper_type", getattr(self.instance, "paper_type", None))
+        qs = PaperStock.objects.filter(shop=shop, sheet_size=sheet_size, gsm=gsm, paper_type=paper_type)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A paper stock with this size, GSM and type already exists.")
+        return attrs
 
     def create(self, validated_data):
         validated_data["shop"] = self.context["shop"]

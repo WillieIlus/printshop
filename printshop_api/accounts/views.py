@@ -116,6 +116,8 @@ class LoginView(TokenObtainPairView):
     
     serializer_class = CustomTokenObtainPairSerializer
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    throttle_classes = []
 
 
 class LogoutView(APIView):

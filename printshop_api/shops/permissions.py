@@ -54,7 +54,22 @@ class IsShopMember(permissions.BasePermission):
     """
     Allow access to any active member of the shop.
     """
-    
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        """For list/create: check shop access via shop_slug in URL."""
+        shop_slug = view.kwargs.get("shop_slug")
+        if not shop_slug:
+            return True
+        try:
+            shop = Shop.objects.get(slug=shop_slug)
+        except Shop.DoesNotExist:
+            return False
+        if shop.owner == request.user:
+            return True
+        return ShopMember.objects.filter(
+            shop=shop, user=request.user, is_active=True
+        ).exists()
+
     def has_object_permission(self, request: Request, view: APIView, obj) -> bool:
         shop = obj if isinstance(obj, Shop) else getattr(obj, "shop", None)
         
@@ -77,7 +92,25 @@ class IsShopManagerOrOwner(permissions.BasePermission):
     """
     Allow access to shop owners or users with MANAGER/OWNER role.
     """
-    
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        """For list/create: check shop manager/owner access via shop_slug in URL."""
+        shop_slug = view.kwargs.get("shop_slug")
+        if not shop_slug:
+            return True
+        try:
+            shop = Shop.objects.get(slug=shop_slug)
+        except Shop.DoesNotExist:
+            return False
+        if shop.owner == request.user:
+            return True
+        return ShopMember.objects.filter(
+            shop=shop,
+            user=request.user,
+            role__in=[ShopMember.Role.OWNER, ShopMember.Role.MANAGER],
+            is_active=True,
+        ).exists()
+
     def has_object_permission(self, request: Request, view: APIView, obj) -> bool:
         shop = obj if isinstance(obj, Shop) else getattr(obj, "shop", None)
         

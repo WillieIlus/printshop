@@ -81,7 +81,7 @@ class ShopViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Return appropriate queryset based on action and user."""
         queryset = Shop.objects.select_related("owner").prefetch_related(
-            "opening_hours", "social_links"
+            "opening_hours", "social_links", "machines"
         )
         
         # For list views, show only active shops unless admin

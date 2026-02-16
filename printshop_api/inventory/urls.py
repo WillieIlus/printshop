@@ -6,6 +6,7 @@ from .views import (
     MachineCapabilityViewSet,
     MaterialViewSet,
     MaterialStockViewSet,
+    PaperStockViewSet,
 )
 
 # 1. This is required to fix the "ImproperlyConfigured" error
@@ -75,5 +76,25 @@ urlpatterns = [
         'shops/<slug:shop_slug>/materials/<int:material_pk>/stock/<int:pk>/adjust/', 
         MaterialStockViewSet.as_view({'post': 'adjust_stock'}), 
         name='stock-adjust'
+    ),
+
+    # ==========================================
+    # Paper Stock (inventory - sheet_size, gsm, paper_type)
+    # URL: /api/shops/<slug>/paper-stock/
+    # ==========================================
+    path(
+        'shops/<slug:shop_slug>/paper-stock/',
+        PaperStockViewSet.as_view({'get': 'list', 'post': 'create'}),
+        name='paper-stock-list'
+    ),
+    path(
+        'shops/<slug:shop_slug>/paper-stock/<int:pk>/',
+        PaperStockViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}),
+        name='paper-stock-detail'
+    ),
+    path(
+        'shops/<slug:shop_slug>/paper-stock/<int:pk>/adjust/',
+        PaperStockViewSet.as_view({'post': 'adjust'}),
+        name='paper-stock-adjust'
     ),
 ]

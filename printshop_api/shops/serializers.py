@@ -23,6 +23,8 @@ from django.db import transaction
 from django.utils.text import slugify
 from rest_framework import serializers
 
+from inventory.serializers import MachinePublicSerializer
+
 from .models import OpeningHours, Shop, ShopClaim, ShopMember, ShopSocialLink
 
 User = get_user_model()
@@ -344,6 +346,7 @@ class ShopDetailSerializer(serializers.ModelSerializer):
     opening_hours = OpeningHoursSerializer(many=True, read_only=True)
     social_links = ShopSocialLinkSerializer(many=True, read_only=True)
     member_count = serializers.SerializerMethodField()
+    machines = MachinePublicSerializer(many=True, read_only=True)
     
     class Meta:
         model = Shop
@@ -367,6 +370,7 @@ class ShopDetailSerializer(serializers.ModelSerializer):
             "opening_hours",
             "social_links",
             "member_count",
+            "machines",
             "created_at",
             "updated_at",
         ]

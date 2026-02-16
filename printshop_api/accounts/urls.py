@@ -41,14 +41,14 @@ auth_urlpatterns = [
     path("confirm-email/", EmailConfirmationView.as_view(), name="confirm-email"),
     
     # Login/Logout
-    path("login/", LoginView.as_view(), name="login"),
-    path("logout/", LogoutView.as_view(), name="logout"),
-    path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
+    path("api-auth/login/", LoginView.as_view(), name="login"),
+    path("api-auth/logout/", LogoutView.as_view(), name="logout"),
+    path("api-auth/token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     
     # Password management
-    path("password/change/", PasswordChangeView.as_view(), name="password-change"),
-    path("password/reset/", PasswordResetRequestView.as_view(), name="password-reset"),
-    path("password/reset/confirm/", PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
+    path("api-auth/password/change/", PasswordChangeView.as_view(), name="password-change"),
+    path("api-auth/password/reset/", PasswordResetRequestView.as_view(), name="password-reset"),
+    path("api-auth/password/reset/confirm/", PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
     
     # Social authentication
     path("social/google/", GoogleLoginView.as_view(), name="social-google"),

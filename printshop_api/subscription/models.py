@@ -51,6 +51,16 @@ class SubscriptionPlan(TimeStampedModel):
         default=1,
         help_text=_("Maximum staff accounts allowed")
     )
+    max_printing_machines = models.PositiveIntegerField(
+        _("max printing machines"),
+        default=1,
+        help_text=_("Maximum printing machines (Digital, Large Format, Offset). 0 = unlimited")
+    )
+    max_finishing_machines = models.PositiveIntegerField(
+        _("max finishing machines"),
+        default=0,
+        help_text=_("Maximum finishing equipment. 0 = none allowed")
+    )
     max_quotes_per_month = models.PositiveIntegerField(
         _("max quotes/month"),
         default=100,
@@ -100,6 +110,7 @@ class Subscription(TimeStampedModel):
     """
     
     class Status(models.TextChoices):
+        PENDING = "PENDING", _("Pending")
         TRIAL = "TRIAL", _("Trial")
         ACTIVE = "ACTIVE", _("Active")
         PAST_DUE = "PAST_DUE", _("Past Due")
@@ -192,6 +203,91 @@ class Subscription(TimeStampedModel):
         if self.status not in [self.Status.ACTIVE, self.Status.TRIAL]:
             return False
         return getattr(self.plan, feature_name, False)
+
+
+class MpesaStkRequest(TimeStampedModel):
+    """
+    M-Pesa STK Push payment intent (C2B).
+    Created when user initiates payment; updated when Daraja callback fires.
+    """
+    class Status(models.TextChoices):
+        INITIATED = "INITIATED", _("Initiated")
+        SUCCESS = "SUCCESS", _("Success")
+        FAILED = "FAILED", _("Failed")
+        CANCELLED = "CANCELLED", _("Cancelled")
+        TIMEOUT = "TIMEOUT", _("Timeout")
+
+    shop = models.ForeignKey(
+        Shop,
+        on_delete=models.CASCADE,
+        related_name="mpesa_stk_requests"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="mpesa_stk_requests"
+    )
+    plan = models.ForeignKey(
+        SubscriptionPlan,
+        on_delete=models.PROTECT,
+        related_name="mpesa_stk_requests"
+    )
+    amount = models.DecimalField(
+        _("amount (KES)"),
+        max_digits=10,
+        decimal_places=2
+    )
+    phone = models.CharField(_("phone"), max_length=20)
+    checkout_request_id = models.CharField(
+        _("checkout request ID"),
+        max_length=100,
+        blank=True,
+        db_index=True,
+        help_text=_("From Daraja STK push response")
+    )
+    merchant_request_id = models.CharField(
+        _("merchant request ID"),
+        max_length=100,
+        blank=True,
+        help_text=_("From Daraja STK push response")
+    )
+    status = models.CharField(
+        _("status"),
+        max_length=20,
+        choices=Status.choices,
+        default=Status.INITIATED,
+        db_index=True
+    )
+    mpesa_receipt_number = models.CharField(
+        _("M-Pesa receipt"),
+        max_length=50,
+        blank=True,
+        help_text=_("Filled on success callback")
+    )
+    raw_request_payload = models.JSONField(
+        _("raw request"),
+        default=dict,
+        blank=True,
+        help_text=_("Original STK push request payload")
+    )
+    raw_callback_payload = models.JSONField(
+        _("raw callback"),
+        default=dict,
+        blank=True,
+        help_text=_("Callback payload from Daraja")
+    )
+
+    class Meta:
+        verbose_name = _("M-Pesa STK request")
+        verbose_name_plural = _("M-Pesa STK requests")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["checkout_request_id"]),
+            models.Index(fields=["status", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.shop.name} - {self.amount} KES ({self.get_status_display()})"
 
 
 class Payment(TimeStampedModel):

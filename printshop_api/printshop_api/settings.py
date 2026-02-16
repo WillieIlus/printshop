@@ -42,10 +42,14 @@ INSTALLED_APPS = [
     # Required by allauth
     "django.contrib.sites",
 
+    # CORS headers
+    "corsheaders",
+
     # Django REST Framework
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
+    "django_filters",
 
     # Django Allauth (for social authentication)
     "allauth",
@@ -84,7 +88,7 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "100/hour",
+        "anon": "1000/hour",
         "user": "1000/hour",
     },
 }
@@ -95,9 +99,13 @@ REST_FRAMEWORK = {
 
 from datetime import timedelta
 
+# When "Remember me" is checked, frontend stores tokens in a 30-day cookie.
+# Refresh token must outlive that so users stay logged in.
+REFRESH_TOKEN_DAYS = 30
+
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=REFRESH_TOKEN_DAYS),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
@@ -189,12 +197,36 @@ PASSWORD_RESET_URL = f"{FRONTEND_URL}/auth/reset-password"
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # CORS - must be before CommonMiddleware
     "allauth.account.middleware.AccountMiddleware", 
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+# =============================================================================
+# CORS Configuration
+# =============================================================================
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
 ]
 
 # settings.py additions
@@ -207,6 +239,11 @@ MPESA_INITIATOR_NAME = os.environ.get("MPESA_INITIATOR_NAME", "")
 MPESA_SECURITY_CREDENTIAL = os.environ.get("MPESA_SECURITY_CREDENTIAL", "")
 MPESA_TIMEOUT_URL = os.environ.get("MPESA_TIMEOUT_URL", "https://yourdomain.com/api/mpesa/timeout/")
 MPESA_RESULT_URL = os.environ.get("MPESA_RESULT_URL", "https://yourdomain.com/api/mpesa/result/")
+MPESA_PASSKEY = os.environ.get("MPESA_PASSKEY", "")
+MPESA_STK_CALLBACK_URL = os.environ.get(
+    "MPESA_STK_CALLBACK_URL",
+    "https://yourdomain.com/api/payments/mpesa/callback/"
+)
 
 # Subscription Settings
 FREE_TRIAL_DAYS = 14

@@ -40,6 +40,8 @@ urlpatterns = [
     # API endpoints
     path("api/", include("accounts.urls", namespace="accounts")),
     path("api/", include("shops.urls", namespace="shops")),
+    path("api/", include("subscription.urls", namespace="subscription")),
+    path("api/", include("inventory.urls", namespace="inventory")),
     path("api/shops/<slug:shop_slug>/pricing/", include("pricing.urls", namespace="pricing")),
     
     # Public template gallery

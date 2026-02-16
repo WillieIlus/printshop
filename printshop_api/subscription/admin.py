@@ -7,6 +7,7 @@ from django.utils.translation import gettext_lazy as _
 
 from .models import (
     Invoice,
+    MpesaStkRequest,
     Payment,
     Subscription,
     SubscriptionPlan,
@@ -59,7 +60,10 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
             "fields": ("name", "plan_type", "billing_period", "price")
         }),
         (_("Limits"), {
-            "fields": ("max_users", "max_quotes_per_month", "max_products")
+            "fields": (
+                "max_printing_machines", "max_finishing_machines",
+                "max_users", "max_quotes_per_month", "max_products"
+            )
         }),
         (_("Features"), {
             "fields": (
@@ -140,6 +144,18 @@ class SubscriptionAdmin(admin.ModelAdmin):
         start = obj.current_period_start.strftime("%d %b")
         end = obj.current_period_end.strftime("%d %b %Y")
         return f"{start} - {end}"
+
+
+@admin.register(MpesaStkRequest)
+class MpesaStkRequestAdmin(admin.ModelAdmin):
+    list_display = [
+        "id", "shop", "plan", "amount", "phone", "status",
+        "mpesa_receipt_number", "created_at",
+    ]
+    list_filter = ["status", "created_at"]
+    search_fields = ["shop__name", "phone", "checkout_request_id"]
+    readonly_fields = ["raw_request_payload", "raw_callback_payload"]
+    ordering = ["-created_at"]
 
 
 @admin.register(Payment)
