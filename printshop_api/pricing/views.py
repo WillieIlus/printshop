@@ -131,7 +131,11 @@ class RateCardView(APIView):
                 "sheet_size": p.sheet_size,
                 "color_mode": p.get_color_mode_display(),
                 "price_per_side": p.selling_price_per_side,
-                "price_double_sided": p.selling_price_per_side * 2
+                "price_double_sided": (
+                    p.selling_price_duplex_per_sheet
+                    if p.selling_price_duplex_per_sheet is not None
+                    else p.selling_price_per_side * 2
+                )
             }
             for p in printing
         ]
@@ -215,15 +219,21 @@ class CalculatePriceView(APIView):
         
         # Calculate price
         data = input_serializer.validated_data
-        result = PriceCalculator.calculate(
-            shop=shop,
-            sheet_size=data["sheet_size"],
-            gsm=data["gsm"],
-            quantity=data["quantity"],
-            sides=data.get("sides", 1),
-            paper_type=data.get("paper_type", "GLOSS"),
-            finishing_ids=data.get("finishing_ids", [])
-        )
+        calc_kwargs = {
+            "shop": shop,
+            "quantity": data["quantity"],
+            "sides": data.get("sides", 1),
+            "paper_type": data.get("paper_type", "GLOSS"),
+            "finishing_ids": data.get("finishing_ids", []),
+        }
+        if data.get("unit") == "SQM":
+            calc_kwargs["material_type"] = data.get("material_type")
+            calc_kwargs["unit"] = "SQM"
+            calc_kwargs["area_sqm"] = data.get("area_sqm")
+        else:
+            calc_kwargs["sheet_size"] = data.get("sheet_size")
+            calc_kwargs["gsm"] = data.get("gsm")
+        result = PriceCalculator.calculate(**calc_kwargs)
         
         # Return result
         output_serializer = PriceCalculatorOutputSerializer(result)

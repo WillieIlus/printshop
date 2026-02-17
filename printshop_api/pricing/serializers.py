@@ -18,7 +18,7 @@ class PrintingPriceSerializer(serializers.ModelSerializer):
         model = PrintingPrice
         fields = [
             "id", "machine", "sheet_size", "color_mode",
-            "selling_price_per_side", "buying_price_per_side",
+            "selling_price_per_side", "selling_price_duplex_per_sheet", "buying_price_per_side",
             "profit_per_side", "is_active"
         ]
         read_only_fields = ["id", "profit_per_side"]
@@ -126,8 +126,13 @@ class RateCardSerializer(serializers.Serializer):
 class PriceCalculatorInputSerializer(serializers.Serializer):
     """Input for price calculation."""
     
-    sheet_size = serializers.ChoiceField(choices=["A5", "A4", "A3", "SRA3"])
-    gsm = serializers.IntegerField(min_value=60, max_value=500)
+    # Sheet printing
+    sheet_size = serializers.ChoiceField(
+        choices=["A5", "A4", "A3", "SRA3"],
+        required=False,
+        allow_null=True
+    )
+    gsm = serializers.IntegerField(min_value=60, max_value=500, required=False, allow_null=True)
     quantity = serializers.IntegerField(min_value=1)
     sides = serializers.IntegerField(min_value=1, max_value=2, default=1)
     paper_type = serializers.ChoiceField(
@@ -139,6 +144,37 @@ class PriceCalculatorInputSerializer(serializers.Serializer):
         required=False,
         default=[]
     )
+    # Large format (SQM)
+    material_type = serializers.ChoiceField(
+        choices=["BANNER", "VINYL", "REFLECTIVE", "PAPER"],
+        required=False,
+        allow_null=True
+    )
+    unit = serializers.ChoiceField(
+        choices=["SHEET_A4", "SHEET_A3", "SHEET_SRA3", "SQM"],
+        required=False,
+        allow_null=True
+    )
+    area_sqm = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        min_value=0,
+        required=False,
+        allow_null=True
+    )
+
+    def validate(self, attrs):
+        if attrs.get("unit") == "SQM":
+            if not attrs.get("material_type") or attrs.get("area_sqm") is None:
+                raise serializers.ValidationError(
+                    "When unit is SQM, material_type and area_sqm are required"
+                )
+        else:
+            if not attrs.get("sheet_size") or attrs.get("gsm") is None:
+                raise serializers.ValidationError(
+                    "Sheet printing requires sheet_size and gsm"
+                )
+        return attrs
 
 
 class FinishingBreakdownSerializer(serializers.Serializer):
@@ -163,6 +199,7 @@ class PriceCalculatorOutputSerializer(serializers.Serializer):
     # Totals
     total_printing = serializers.DecimalField(max_digits=10, decimal_places=2)
     total_paper = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_material = serializers.DecimalField(max_digits=10, decimal_places=2)
     total_finishing = serializers.DecimalField(max_digits=10, decimal_places=2)
     
     # Finishing breakdown

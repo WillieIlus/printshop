@@ -6,7 +6,7 @@ Simple, layman-friendly admin for pricing.
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import PrintingPrice, PaperPrice, FinishingService, VolumeDiscount
+from .models import PrintingPrice, PaperPrice, MaterialPrice, FinishingService, VolumeDiscount
 
 
 @admin.register(PrintingPrice)
@@ -33,8 +33,8 @@ class PrintingPriceAdmin(admin.ModelAdmin):
             "fields": ("shop", "machine", "sheet_size", "color_mode")
         }),
         ("Pricing (per side)", {
-            "fields": ("selling_price_per_side", "buying_price_per_side"),
-            "description": "Set the price per printed side"
+            "fields": ("selling_price_per_side", "selling_price_duplex_per_sheet", "buying_price_per_side"),
+            "description": "Set the price per printed side. Duplex override: optional price for both sides per sheet (e.g. 10 bob duplex vs 7×2 per side)."
         }),
         ("Status", {
             "fields": ("is_active",)
@@ -112,6 +112,43 @@ class PaperPriceAdmin(admin.ModelAdmin):
         margin = obj.margin_percent
         return f"{margin:.1f}%"
     margin_display.short_description = "Margin"
+
+
+@admin.register(MaterialPrice)
+class MaterialPriceAdmin(admin.ModelAdmin):
+    """Large-format materials (banner, vinyl, reflective) priced per SQM or sheet."""
+    
+    list_display = [
+        "shop",
+        "material_type",
+        "unit",
+        "selling_price",
+        "buying_price_display",
+        "is_active"
+    ]
+    list_filter = ["shop", "material_type", "unit", "is_active"]
+    list_editable = ["selling_price", "is_active"]
+    search_fields = ["shop__name"]
+    ordering = ["shop", "material_type", "unit"]
+    
+    fieldsets = (
+        ("Material", {
+            "fields": ("shop", "material_type", "unit")
+        }),
+        ("Pricing", {
+            "fields": ("selling_price", "buying_price"),
+            "description": "Selling price per unit (e.g. per SQM for large format)"
+        }),
+        ("Status", {
+            "fields": ("is_active",)
+        }),
+    )
+    
+    def buying_price_display(self, obj):
+        if obj.buying_price:
+            return f"KES {obj.buying_price}"
+        return "-"
+    buying_price_display.short_description = "Buy"
 
 
 @admin.register(FinishingService)
