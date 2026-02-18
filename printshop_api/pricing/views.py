@@ -16,16 +16,33 @@ from rest_framework.views import APIView
 from shops.models import Shop
 from shops.permissions import IsShopOwner, IsShopMember
 
-from .models import PrintingPrice, PaperPrice, FinishingService, VolumeDiscount, PriceCalculator
+from .models import (
+    PrintingPrice,
+    PaperPrice,
+    MaterialPrice,
+    FinishingService,
+    VolumeDiscount,
+    PriceCalculator,
+    DefaultPrintingPriceTemplate,
+    DefaultPaperPriceTemplate,
+    DefaultMaterialPriceTemplate,
+    DefaultFinishingServiceTemplate,
+)
 from .serializers import (
     PrintingPriceSerializer,
     PaperPriceSerializer,
+    MaterialPriceSerializer,
     FinishingServiceSerializer,
     VolumeDiscountSerializer,
+    DefaultPrintingPriceTemplateSerializer,
+    DefaultPaperPriceTemplateSerializer,
+    DefaultMaterialPriceTemplateSerializer,
+    DefaultFinishingServiceTemplateSerializer,
     RateCardSerializer,
     PriceCalculatorInputSerializer,
     PriceCalculatorOutputSerializer,
 )
+from .services.seeding import seed_shop_pricing
 
 
 # =============================================================================
@@ -44,6 +61,13 @@ class ShopPricingMixin:
     
     def perform_create(self, serializer):
         serializer.save(shop=self.get_shop())
+    
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        if instance and hasattr(instance, "needs_review"):
+            serializer.save(needs_review=False)
+        else:
+            serializer.save()
 
 
 class PrintingPriceViewSet(ShopPricingMixin, viewsets.ModelViewSet):
@@ -97,6 +121,99 @@ class VolumeDiscountViewSet(ShopPricingMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsShopOwner]
 
 
+class MaterialPriceViewSet(ShopPricingMixin, viewsets.ModelViewSet):
+    """
+    Manage material prices (SQM) for a shop.
+    """
+    
+    queryset = MaterialPrice.objects.all()
+    serializer_class = MaterialPriceSerializer
+    permission_classes = [IsAuthenticated, IsShopMember]
+
+
+# =============================================================================
+# DEFAULT TEMPLATES - Public read-only
+# =============================================================================
+
+class DefaultPrintingPriceTemplateViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = DefaultPrintingPriceTemplate.objects.all()
+    serializer_class = DefaultPrintingPriceTemplateSerializer
+    permission_classes = [AllowAny]
+
+
+class DefaultPaperPriceTemplateViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = DefaultPaperPriceTemplate.objects.all()
+    serializer_class = DefaultPaperPriceTemplateSerializer
+    permission_classes = [AllowAny]
+
+
+class DefaultMaterialPriceTemplateViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = DefaultMaterialPriceTemplate.objects.all()
+    serializer_class = DefaultMaterialPriceTemplateSerializer
+    permission_classes = [AllowAny]
+
+
+class DefaultFinishingServiceTemplateViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = DefaultFinishingServiceTemplate.objects.all()
+    serializer_class = DefaultFinishingServiceTemplateSerializer
+    permission_classes = [AllowAny]
+
+
+# =============================================================================
+# SHOP PRICING ACTIONS - Seed defaults, status
+# =============================================================================
+
+class SeedDefaultsView(APIView):
+    """
+    POST /api/shops/<slug>/pricing/seed-defaults/
+    Body: { machine_ids?: number[], overwrite?: boolean }
+    Permission: shop owner/admin only
+    """
+    permission_classes = [IsAuthenticated, IsShopOwner]
+
+    def post(self, request, shop_slug):
+        try:
+            shop = Shop.objects.get(slug=shop_slug)
+        except Shop.DoesNotExist:
+            return Response({"error": "Shop not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if shop.owner != request.user and not request.user.is_staff:
+            return Response({"error": "Only shop owner or admin can seed defaults"}, status=status.HTTP_403_FORBIDDEN)
+
+        machine_ids = request.data.get("machine_ids")
+        overwrite = request.data.get("overwrite", False)
+
+        result = seed_shop_pricing(shop, machine_ids=machine_ids, overwrite=overwrite)
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class PricingStatusView(APIView):
+    """
+    GET /api/shops/<slug>/pricing/status/
+    Returns counts of rows and needs_review per category.
+    """
+    permission_classes = [IsAuthenticated, IsShopMember]
+
+    def get(self, request, shop_slug):
+        try:
+            shop = Shop.objects.get(slug=shop_slug)
+        except Shop.DoesNotExist:
+            return Response({"error": "Shop not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        printing = PrintingPrice.objects.filter(shop=shop)
+        paper = PaperPrice.objects.filter(shop=shop)
+        material = MaterialPrice.objects.filter(shop=shop)
+        finishing = FinishingService.objects.filter(shop=shop)
+
+        data = {
+            "printing": {"total": printing.count(), "needs_review": printing.filter(needs_review=True).count()},
+            "paper": {"total": paper.count(), "needs_review": paper.filter(needs_review=True).count()},
+            "material": {"total": material.count(), "needs_review": material.filter(needs_review=True).count()},
+            "finishing": {"total": finishing.count(), "needs_review": finishing.filter(needs_review=True).count()},
+        }
+        return Response(data)
+
+
 # =============================================================================
 # PUBLIC VIEWS - For Customers
 # =============================================================================
@@ -131,7 +248,7 @@ class RateCardView(APIView):
                 "sheet_size": p.sheet_size,
                 "color_mode": p.get_color_mode_display(),
                 "price_per_side": p.selling_price_per_side,
-                "price_double_sided": p.selling_price_per_side * 2
+                "price_double_sided": p.get_price_for_sides(2)
             }
             for p in printing
         ]

@@ -82,8 +82,19 @@ class PrintingPrice(TimeStampedModel):
         validators=[MinValueValidator(Decimal("0.00"))],
         help_text=_("Your cost per side (optional, for tracking profit)")
     )
+    selling_price_duplex_per_sheet = models.DecimalField(
+        _("selling price duplex per sheet"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Override for double-sided: price per sheet (both sides). If null, uses 2× per-side.")
+    )
     
     is_active = models.BooleanField(_("active"), default=True)
+    is_default_seeded = models.BooleanField(_("default seeded"), default=False)
+    needs_review = models.BooleanField(_("needs review"), default=False)
 
     class Meta:
         verbose_name = _("printing price")
@@ -108,6 +119,8 @@ class PrintingPrice(TimeStampedModel):
     
     def get_price_for_sides(self, sides: int = 1) -> Decimal:
         """Get price for 1 or 2 sides."""
+        if sides == 2 and self.selling_price_duplex_per_sheet is not None:
+            return self.selling_price_duplex_per_sheet
         return self.selling_price_per_side * sides
 
 
@@ -180,6 +193,8 @@ class PaperPrice(TimeStampedModel):
     )
     
     is_active = models.BooleanField(_("active"), default=True)
+    is_default_seeded = models.BooleanField(_("default seeded"), default=False)
+    needs_review = models.BooleanField(_("needs review"), default=False)
 
     class Meta:
         verbose_name = _("paper price")
@@ -205,6 +220,86 @@ class PaperPrice(TimeStampedModel):
         """Profit margin as percentage."""
         if self.selling_price > 0:
             return ((self.selling_price - self.buying_price) / self.selling_price) * 100
+        return Decimal("0")
+
+
+# =============================================================================
+# MATERIAL PRICES - Large format materials (SQM)
+# =============================================================================
+
+class MaterialPrice(TimeStampedModel):
+    """
+    Material pricing by unit (SQM for large format).
+    
+    Example: Vinyl per SQM, Banner per SQM
+    """
+    
+    class Unit(models.TextChoices):
+        SQM = "SQM", _("Square Meter")
+        SHEET = "SHEET", _("Per Sheet")
+    
+    class MaterialType(models.TextChoices):
+        VINYL = "VINYL", _("Vinyl")
+        BANNER = "BANNER", _("Banner")
+        CANVAS = "CANVAS", _("Canvas")
+        PAPER = "PAPER", _("Paper")
+        OTHER = "OTHER", _("Other")
+
+    shop = models.ForeignKey(
+        Shop,
+        on_delete=models.CASCADE,
+        related_name="material_prices"
+    )
+    material_type = models.CharField(
+        _("material type"),
+        max_length=20,
+        choices=MaterialType.choices,
+        default=MaterialType.OTHER
+    )
+    unit = models.CharField(
+        _("unit"),
+        max_length=20,
+        choices=Unit.choices,
+        default=Unit.SQM
+    )
+    selling_price = models.DecimalField(
+        _("selling price"),
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        help_text=_("What CUSTOMER pays per unit")
+    )
+    buying_price = models.DecimalField(
+        _("buying price"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("What YOU pay per unit")
+    )
+    is_active = models.BooleanField(_("active"), default=True)
+    is_default_seeded = models.BooleanField(_("default seeded"), default=False)
+    needs_review = models.BooleanField(_("needs review"), default=False)
+
+    class Meta:
+        verbose_name = _("material price")
+        verbose_name_plural = _("material prices")
+        ordering = ["material_type", "unit"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shop", "material_type", "unit"],
+                name="unique_material_price"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.get_material_type_display()} ({self.get_unit_display()}): KES {self.selling_price}"
+    
+    @property
+    def profit(self) -> Decimal:
+        if self.buying_price:
+            return self.selling_price - self.buying_price
         return Decimal("0")
 
 
@@ -279,6 +374,8 @@ class FinishingService(TimeStampedModel):
         help_text=_("Pre-select this option for customers")
     )
     is_active = models.BooleanField(_("active"), default=True)
+    is_default_seeded = models.BooleanField(_("default seeded"), default=False)
+    needs_review = models.BooleanField(_("needs review"), default=False)
 
     class Meta:
         verbose_name = _("finishing service")
@@ -412,6 +509,225 @@ class PriceCalculator:
             result["price_per_sheet"] = result["grand_total"] / quantity
         
         return result
+
+
+# =============================================================================
+# DEFAULT PRICING TEMPLATES - Seed data for new shops
+# =============================================================================
+
+class DefaultPrintingPriceTemplate(TimeStampedModel):
+    """
+    Template for printing prices. Maps by machine_category (machine type),
+    sheet_size, color_mode.
+    """
+    
+    class SheetSize(models.TextChoices):
+        A5 = "A5", _("A5")
+        A4 = "A4", _("A4")
+        A3 = "A3", _("A3")
+        SRA3 = "SRA3", _("SRA3")
+    
+    class ColorMode(models.TextChoices):
+        BW = "BW", _("Black & White")
+        COLOR = "COLOR", _("Full Color")
+
+    machine_category = models.CharField(
+        _("machine category/type"),
+        max_length=20,
+        help_text=_("Matches Machine.machine_type: DIGITAL, LARGE_FORMAT, OFFSET")
+    )
+    sheet_size = models.CharField(
+        max_length=20,
+        choices=SheetSize.choices,
+        default=SheetSize.A4
+    )
+    color_mode = models.CharField(
+        max_length=20,
+        choices=ColorMode.choices,
+        default=ColorMode.COLOR
+    )
+    selling_price_per_side = models.DecimalField(
+        _("selling price per side"),
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))]
+    )
+    selling_price_duplex_per_sheet = models.DecimalField(
+        _("selling price duplex per sheet"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Override for double-sided. If null, uses 2× per-side.")
+    )
+
+    class Meta:
+        verbose_name = _("default printing price template")
+        verbose_name_plural = _("default printing price templates")
+        ordering = ["machine_category", "sheet_size", "color_mode"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["machine_category", "sheet_size", "color_mode"],
+                name="unique_default_printing_template"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.machine_category} {self.sheet_size} {self.get_color_mode_display()}: KES {self.selling_price_per_side}/side"
+
+
+class DefaultPaperPriceTemplate(TimeStampedModel):
+    """Template for paper prices by sheet_size, paper_type, gsm."""
+
+    class SheetSize(models.TextChoices):
+        A5 = "A5", _("A5")
+        A4 = "A4", _("A4")
+        A3 = "A3", _("A3")
+        SRA3 = "SRA3", _("SRA3")
+    
+    class PaperType(models.TextChoices):
+        GLOSS = "GLOSS", _("Gloss")
+        MATTE = "MATTE", _("Matte")
+        BOND = "BOND", _("Bond")
+        ART = "ART", _("Art Paper")
+
+    sheet_size = models.CharField(
+        max_length=20,
+        choices=SheetSize.choices,
+        default=SheetSize.A3
+    )
+    paper_type = models.CharField(
+        max_length=20,
+        choices=PaperType.choices,
+        default=PaperType.GLOSS
+    )
+    gsm = models.PositiveIntegerField(
+        validators=[MinValueValidator(60), MaxValueValidator(500)]
+    )
+    selling_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))]
+    )
+    buying_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))]
+    )
+
+    class Meta:
+        verbose_name = _("default paper price template")
+        verbose_name_plural = _("default paper price templates")
+        ordering = ["sheet_size", "gsm", "paper_type"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sheet_size", "paper_type", "gsm"],
+                name="unique_default_paper_template"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.sheet_size} {self.gsm}gsm {self.get_paper_type_display()}: KES {self.selling_price}"
+
+
+class DefaultMaterialPriceTemplate(TimeStampedModel):
+    """Template for material prices (SQM)."""
+
+    class Unit(models.TextChoices):
+        SQM = "SQM", _("Square Meter")
+        SHEET = "SHEET", _("Per Sheet")
+    
+    class MaterialType(models.TextChoices):
+        VINYL = "VINYL", _("Vinyl")
+        BANNER = "BANNER", _("Banner")
+        CANVAS = "CANVAS", _("Canvas")
+        PAPER = "PAPER", _("Paper")
+        OTHER = "OTHER", _("Other")
+
+    material_type = models.CharField(
+        max_length=20,
+        choices=MaterialType.choices,
+        default=MaterialType.OTHER
+    )
+    unit = models.CharField(
+        max_length=20,
+        choices=Unit.choices,
+        default=Unit.SQM
+    )
+    selling_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))]
+    )
+    buying_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))]
+    )
+
+    class Meta:
+        verbose_name = _("default material price template")
+        verbose_name_plural = _("default material price templates")
+        ordering = ["material_type", "unit"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["material_type", "unit"],
+                name="unique_default_material_template"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.get_material_type_display()} ({self.get_unit_display()}): KES {self.selling_price}"
+
+
+class DefaultFinishingServiceTemplate(TimeStampedModel):
+    """Template for finishing services."""
+
+    class UnitType(models.TextChoices):
+        PER_SHEET = "PER_SHEET", _("Per Sheet")
+        PER_PIECE = "PER_PIECE", _("Per Piece/Item")
+        PER_JOB = "PER_JOB", _("Per Job (Flat Fee)")
+
+    name = models.CharField(
+        max_length=100,
+        help_text=_("e.g., Matt Lamination A3, Spiral Binding")
+    )
+    unit_type = models.CharField(
+        max_length=20,
+        choices=UnitType.choices,
+        default=UnitType.PER_SHEET
+    )
+    selling_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))]
+    )
+    buying_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))]
+    )
+
+    class Meta:
+        verbose_name = _("default finishing service template")
+        verbose_name_plural = _("default finishing service templates")
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["name", "unit_type"],
+                name="unique_default_finishing_template"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name}: KES {self.selling_price} {self.get_unit_type_display()}"
 
 
 # =============================================================================

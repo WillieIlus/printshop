@@ -6,7 +6,17 @@ Simple, layman-friendly admin for pricing.
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import PrintingPrice, PaperPrice, FinishingService, VolumeDiscount
+from .models import (
+    PrintingPrice,
+    PaperPrice,
+    MaterialPrice,
+    FinishingService,
+    VolumeDiscount,
+    DefaultPrintingPriceTemplate,
+    DefaultPaperPriceTemplate,
+    DefaultMaterialPriceTemplate,
+    DefaultFinishingServiceTemplate,
+)
 
 
 @admin.register(PrintingPrice)
@@ -180,3 +190,49 @@ class VolumeDiscountAdmin(admin.ModelAdmin):
     list_filter = ["shop", "is_active"]
     list_editable = ["discount_percent", "is_active"]
     ordering = ["shop", "min_quantity"]
+
+
+@admin.register(MaterialPrice)
+class MaterialPriceAdmin(admin.ModelAdmin):
+    """Material prices (SQM)."""
+    
+    list_display = ["shop", "material_type", "unit", "selling_price", "buying_price", "is_active"]
+    list_filter = ["shop", "material_type", "unit", "is_active"]
+    search_fields = ["shop__name"]
+    ordering = ["shop", "material_type", "unit"]
+
+
+# =============================================================================
+# DEFAULT TEMPLATES
+# =============================================================================
+
+@admin.register(DefaultPrintingPriceTemplate)
+class DefaultPrintingPriceTemplateAdmin(admin.ModelAdmin):
+    list_display = ["machine_category", "sheet_size", "color_mode", "selling_price_per_side", "selling_price_duplex_per_sheet"]
+    list_filter = ["machine_category", "sheet_size", "color_mode"]
+    search_fields = ["machine_category"]
+    ordering = ["machine_category", "sheet_size", "color_mode"]
+
+
+@admin.register(DefaultPaperPriceTemplate)
+class DefaultPaperPriceTemplateAdmin(admin.ModelAdmin):
+    list_display = ["sheet_size", "paper_type", "gsm", "selling_price", "buying_price"]
+    list_filter = ["sheet_size", "paper_type"]
+    search_fields = ["sheet_size", "paper_type"]
+    ordering = ["sheet_size", "gsm", "paper_type"]
+
+
+@admin.register(DefaultMaterialPriceTemplate)
+class DefaultMaterialPriceTemplateAdmin(admin.ModelAdmin):
+    list_display = ["material_type", "unit", "selling_price", "buying_price"]
+    list_filter = ["material_type", "unit"]
+    search_fields = ["material_type"]
+    ordering = ["material_type", "unit"]
+
+
+@admin.register(DefaultFinishingServiceTemplate)
+class DefaultFinishingServiceTemplateAdmin(admin.ModelAdmin):
+    list_display = ["name", "unit_type", "selling_price", "buying_price"]
+    list_filter = ["unit_type"]
+    search_fields = ["name"]
+    ordering = ["name"]

@@ -43,6 +43,7 @@ urlpatterns = [
     path("api/", include("subscription.urls", namespace="subscription")),
     path("api/", include("inventory.urls", namespace="inventory")),
     path("api/shops/<slug:shop_slug>/pricing/", include("pricing.urls", namespace="pricing")),
+    path("api/pricing/", include("pricing.urls_defaults")),
     
     # Public template gallery
     path("api/templates/", include("templates.urls", namespace="templates")),
