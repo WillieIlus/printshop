@@ -12,16 +12,16 @@ from django.contrib.auth import get_user_model
 from shops.models import Shop
 from inventory.models import Machine, Material, MaterialStock
 from pricing.models import (
-    DigitalPrintPrice,
+    PrintingPrice,
+    PaperPrice,
     MaterialPrice,
-    FinishingPrice,
-    PricingTier,
+    FinishingService,
     VolumeDiscount,
+    PriceCalculator,
+    # Legacy aliases (current schema uses PrintingPrice, PaperPrice, FinishingService)
+    DigitalPrintPrice,
     PaperGSMPrice,
-    PricingVariable,
-    RawMaterial,
-    FinishingOption,
-    PricingEngine,
+    FinishingPrice,
 )
 
 
@@ -862,3 +862,144 @@ class PricingIntegrationTests(TestCase):
         # Paper: 30 * 10 = 300
         # Total: 600
         self.assertEqual(result["total"], Decimal("600.00"))
+
+
+# =============================================================================
+# PriceCalculator Tests (simplified models: PrintingPrice, PaperPrice, MaterialPrice)
+# =============================================================================
+
+
+class PriceCalculatorPrintingTests(TestCase):
+    """Test PriceCalculator printing logic: one-sided, duplex with/without override."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="calc@example.com",
+            password="testpass123"
+        )
+        self.shop = Shop.objects.create(
+            owner=self.user,
+            name="Calc Shop",
+            slug="calc-shop",
+            business_email="calc@example.com"
+        )
+        self.machine = Machine.objects.create(
+            shop=self.shop,
+            name="Test Printer",
+            machine_type="DIGITAL",
+            is_active=True
+        )
+
+    def test_one_sided_uses_per_side(self):
+        """One-sided printing uses selling_price_per_side * quantity."""
+        PrintingPrice.objects.create(
+            shop=self.shop,
+            machine=self.machine,
+            sheet_size="A3",
+            color_mode="COLOR",
+            selling_price_per_side=Decimal("7.00"),
+            is_active=True
+        )
+        result = PriceCalculator.calculate(
+            shop=self.shop,
+            sheet_size="A3",
+            gsm=80,
+            quantity=10,
+            sides=1,
+            paper_type="GLOSS"
+        )
+        # 7 * 10 = 70 (no paper in this shop - PaperPrice.DoesNotExist)
+        self.assertEqual(result["total_printing"], Decimal("70.00"))
+
+    def test_duplex_uses_duplex_per_sheet_override_when_present(self):
+        """Duplex with override uses selling_price_duplex_per_sheet * quantity (not 2x per_side)."""
+        PrintingPrice.objects.create(
+            shop=self.shop,
+            machine=self.machine,
+            sheet_size="A3",
+            color_mode="COLOR",
+            selling_price_per_side=Decimal("7.00"),
+            selling_price_duplex_per_sheet=Decimal("10.00"),
+            is_active=True
+        )
+        result = PriceCalculator.calculate(
+            shop=self.shop,
+            sheet_size="A3",
+            gsm=80,
+            quantity=10,
+            sides=2,
+            paper_type="GLOSS"
+        )
+        # 10 * 10 = 100 (duplex override, NOT 7*2*10=140)
+        self.assertEqual(result["total_printing"], Decimal("100.00"))
+
+    def test_duplex_uses_2x_per_side_when_no_override(self):
+        """Duplex without override uses selling_price_per_side * 2 * quantity."""
+        PrintingPrice.objects.create(
+            shop=self.shop,
+            machine=self.machine,
+            sheet_size="A3",
+            color_mode="COLOR",
+            selling_price_per_side=Decimal("7.00"),
+            selling_price_duplex_per_sheet=None,
+            is_active=True
+        )
+        result = PriceCalculator.calculate(
+            shop=self.shop,
+            sheet_size="A3",
+            gsm=80,
+            quantity=10,
+            sides=2,
+            paper_type="GLOSS"
+        )
+        # 7 * 2 * 10 = 140
+        self.assertEqual(result["total_printing"], Decimal("140.00"))
+
+
+class PriceCalculatorMaterialTests(TestCase):
+    """Test PriceCalculator material (SQM) logic."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="mat@example.com",
+            password="testpass123"
+        )
+        self.shop = Shop.objects.create(
+            owner=self.user,
+            name="Material Shop",
+            slug="material-shop",
+            business_email="mat@example.com"
+        )
+
+    def test_sqm_price_multiplies_by_area_sqm(self):
+        """SQM material cost = selling_price * area_sqm."""
+        MaterialPrice.objects.create(
+            shop=self.shop,
+            material_type="BANNER",
+            unit="SQM",
+            selling_price=Decimal("500.00"),
+            is_active=True
+        )
+        result = PriceCalculator.calculate(
+            shop=self.shop,
+            quantity=1,
+            material_type="BANNER",
+            unit="SQM",
+            area_sqm=Decimal("2.5")
+        )
+        # 500 * 2.5 = 1250
+        self.assertEqual(result["total_material"], Decimal("1250.00"))
+        self.assertEqual(result["grand_total"], Decimal("1250.00"))
+
+    def test_resolve_material_price_helper(self):
+        """resolve_material_price returns correct MaterialPrice or None."""
+        mp = MaterialPrice.objects.create(
+            shop=self.shop,
+            material_type="VINYL",
+            unit="SQM",
+            selling_price=Decimal("600.00"),
+            is_active=True
+        )
+        resolved = PriceCalculator.resolve_material_price(self.shop, "VINYL", "SQM")
+        self.assertEqual(resolved, mp)
+        self.assertIsNone(PriceCalculator.resolve_material_price(self.shop, "REFLECTIVE", "SQM"))
