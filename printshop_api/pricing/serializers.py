@@ -4,7 +4,18 @@ Serializers for simplified pricing models.
 """
 
 from rest_framework import serializers
-from .models import PrintingPrice, PaperPrice, FinishingService, VolumeDiscount, PriceCalculator
+from .models import (
+    PrintingPrice,
+    PaperPrice,
+    MaterialPrice,
+    FinishingService,
+    VolumeDiscount,
+    PriceCalculator,
+    DefaultPrintingPriceTemplate,
+    DefaultPaperPriceTemplate,
+    DefaultMaterialPriceTemplate,
+    DefaultFinishingServiceTemplate,
+)
 
 
 class PrintingPriceSerializer(serializers.ModelSerializer):
@@ -18,8 +29,7 @@ class PrintingPriceSerializer(serializers.ModelSerializer):
         model = PrintingPrice
         fields = [
             "id", "machine", "sheet_size", "color_mode",
-            "selling_price_per_side", "selling_price_duplex_per_sheet", "buying_price_per_side",
-            "profit_per_side", "is_active"
+            "profit_per_side", "is_active", "is_default_seeded", "needs_review"
         ]
         read_only_fields = ["id", "profit_per_side"]
 
@@ -39,9 +49,26 @@ class PaperPriceSerializer(serializers.ModelSerializer):
         fields = [
             "id", "sheet_size", "gsm", "paper_type",
             "buying_price", "selling_price",
-            "profit", "margin_percent", "is_active"
+            "profit", "margin_percent", "is_active", "is_default_seeded", "needs_review"
         ]
         read_only_fields = ["id", "profit", "margin_percent"]
+
+
+class MaterialPriceSerializer(serializers.ModelSerializer):
+    """Material prices (SQM)."""
+    
+    profit = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
+    
+    class Meta:
+        model = MaterialPrice
+        fields = [
+            "id", "material_type", "unit",
+            "buying_price", "selling_price",
+            "profit", "is_active", "is_default_seeded", "needs_review"
+        ]
+        read_only_fields = ["id", "profit"]
 
 
 class FinishingServiceSerializer(serializers.ModelSerializer):
@@ -56,7 +83,7 @@ class FinishingServiceSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "category", "charge_by",
             "buying_price", "selling_price",
-            "profit", "is_default", "is_active"
+            "profit", "is_default", "is_active", "is_default_seeded", "needs_review"
         ]
         read_only_fields = ["id", "profit"]
 
@@ -70,6 +97,37 @@ class VolumeDiscountSerializer(serializers.ModelSerializer):
             "id", "name", "min_quantity", "discount_percent", "is_active"
         ]
         read_only_fields = ["id"]
+
+
+# =============================================================================
+# DEFAULT TEMPLATES - Public read-only
+# =============================================================================
+
+class DefaultPrintingPriceTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DefaultPrintingPriceTemplate
+        fields = [
+            "id", "machine_category", "sheet_size", "color_mode",
+            "selling_price_per_side", "selling_price_duplex_per_sheet"
+        ]
+
+
+class DefaultPaperPriceTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DefaultPaperPriceTemplate
+        fields = ["id", "sheet_size", "paper_type", "gsm", "selling_price", "buying_price"]
+
+
+class DefaultMaterialPriceTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DefaultMaterialPriceTemplate
+        fields = ["id", "material_type", "unit", "selling_price", "buying_price"]
+
+
+class DefaultFinishingServiceTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DefaultFinishingServiceTemplate
+        fields = ["id", "name", "unit_type", "selling_price", "buying_price"]
 
 
 # =============================================================================
@@ -146,12 +204,12 @@ class PriceCalculatorInputSerializer(serializers.Serializer):
     )
     # Large format (SQM)
     material_type = serializers.ChoiceField(
-        choices=["BANNER", "VINYL", "REFLECTIVE", "PAPER"],
+        choices=["BANNER", "VINYL", "REFLECTIVE", "CANVAS", "PAPER", "OTHER"],
         required=False,
         allow_null=True
     )
     unit = serializers.ChoiceField(
-        choices=["SHEET_A4", "SHEET_A3", "SHEET_SRA3", "SQM"],
+        choices=["SHEET_A4", "SHEET_A3", "SHEET_SRA3", "SHEET", "SQM"],
         required=False,
         allow_null=True
     )
