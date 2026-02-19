@@ -1,5 +1,7 @@
 # templates/serializers.py
 
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .models import (
@@ -230,24 +232,87 @@ class TemplateQuoteRequestSerializer(serializers.Serializer):
 class TemplatePriceCalculationSerializer(serializers.Serializer):
     """
     Serializer for real-time price calculation when options change.
-    Returns calculated price without creating a quote.
+    Supports both digital (sheet-based) and large format (area-based) modes.
+
+    Digital mode (default):
+    - quantity (required)
+    - sheet_size (optional; A5/A4/A3/SRA3)
+    - print_sides (SIMPLEX/DUPLEX)
+    - gsm (optional; default from template)
+    - paper_type (optional; GLOSS/MATTE/BOND/ART)
+    - machine_id (optional; not used in STRATEGY 1)
+
+    Large format mode (when unit=SQM or area/width/height/material_type provided):
+    - unit = "SQM"
+    - width_m, height_m (decimal) OR area_sqm (decimal)
+    - quantity (required)
+    - material_type (BANNER/VINYL/REFLECTIVE)
     """
-    
-    template_id = serializers.IntegerField()
-    shop_id = serializers.IntegerField(required=False, allow_null=True)
+
+    # Common
     quantity = serializers.IntegerField(min_value=1)
-    gsm = serializers.IntegerField(required=False, allow_null=True)
+
+    # Digital mode
+    sheet_size = serializers.ChoiceField(
+        choices=[("A5", "A5"), ("A4", "A4"), ("A3", "A3"), ("SRA3", "SRA3")],
+        required=False,
+    )
     print_sides = serializers.ChoiceField(
         choices=[("SIMPLEX", "Single-sided"), ("DUPLEX", "Double-sided")],
-        required=False
+        required=False,
     )
+    gsm = serializers.IntegerField(required=False, allow_null=True, min_value=60, max_value=500)
+    paper_type = serializers.ChoiceField(
+        choices=[("GLOSS", "Gloss"), ("MATTE", "Matte"), ("BOND", "Bond"), ("ART", "Art Paper")],
+        required=False,
+    )
+    machine_id = serializers.IntegerField(required=False, allow_null=True)
+
+    # Large format mode
+    unit = serializers.ChoiceField(
+        choices=[("SHEET", "Sheet"), ("SQM", "Square meter")],
+        required=False,
+    )
+    width_m = serializers.DecimalField(
+        max_digits=10, decimal_places=4, required=False, allow_null=True, min_value=Decimal("0.01")
+    )
+    height_m = serializers.DecimalField(
+        max_digits=10, decimal_places=4, required=False, allow_null=True, min_value=Decimal("0.01")
+    )
+    area_sqm = serializers.DecimalField(
+        max_digits=10, decimal_places=4, required=False, allow_null=True, min_value=Decimal("0.01")
+    )
+    material_type = serializers.ChoiceField(
+        choices=[("BANNER", "Banner"), ("VINYL", "Vinyl"), ("REFLECTIVE", "Reflective")],
+        required=False,
+    )
+
+    # Options and finishing
     selected_option_ids = serializers.ListField(
         child=serializers.IntegerField(),
         required=False,
-        default=list
+        default=list,
     )
     selected_finishing_ids = serializers.ListField(
         child=serializers.IntegerField(),
         required=False,
-        default=list
+        default=list,
     )
+
+    def validate(self, attrs):
+        """Validate large format has required fields when in SQM mode."""
+        is_large = (
+            attrs.get("unit") == "SQM"
+            or attrs.get("area_sqm") is not None
+            or (attrs.get("width_m") is not None and attrs.get("height_m") is not None)
+            or attrs.get("material_type") is not None
+        )
+        if is_large:
+            area = attrs.get("area_sqm")
+            width = attrs.get("width_m")
+            height = attrs.get("height_m")
+            if area is None and (width is None or height is None):
+                raise serializers.ValidationError(
+                    "Large format requires area_sqm or both width_m and height_m"
+                )
+        return attrs
