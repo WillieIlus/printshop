@@ -1,6 +1,5 @@
 # templates/views.py
 
-from decimal import Decimal
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
@@ -9,7 +8,6 @@ from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 
 from shops.models import Shop
-from pricing.models import PaperGSMPrice, DigitalPrintPrice
 
 from .models import (
     TemplateCategory,
@@ -24,6 +22,7 @@ from .serializers import (
     TemplateQuoteRequestSerializer,
     TemplatePriceCalculationSerializer,
 )
+from .services.pricing import calculate_template_price
 
 
 class TemplateCategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -99,142 +98,59 @@ class PrintTemplateViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = PrintTemplateListSerializer(templates, many=True)
         return Response(serializer.data)
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post"], url_path="calculate-price")
     def calculate_price(self, request, slug=None):
         """
         Calculate price for a template with given options.
-        This provides real-time price updates as customer changes options.
-        
+        Uses STRATEGY 1: base_price + deltas (public demo, no shop-specific pricing).
+
         POST /api/templates/{slug}/calculate-price/
+
+        Digital mode:
         {
-            "shop_id": 1,  // optional
             "quantity": 500,
-            "gsm": 300,
+            "sheet_size": "A3",
             "print_sides": "DUPLEX",
+            "gsm": 300,
+            "paper_type": "GLOSS",
             "selected_option_ids": [1, 2],
             "selected_finishing_ids": [3]
+        }
+
+        Large format mode:
+        {
+            "quantity": 10,
+            "unit": "SQM",
+            "width_m": 2.0,
+            "height_m": 1.0,
+            "material_type": "BANNER",
+            "selected_finishing_ids": []
+        }
+
+        Returns:
+        {
+            "printing": {"amount": "KES", "details": {...}},
+            "material": {"amount": "KES", "details": {...}},
+            "finishing": {"amount": "KES", "items": [...]},
+            "subtotal": "KES",
+            "total": "KES",
+            "notes": ["Demo estimate only", ...]
         }
         """
         template = self.get_object()
         serializer = TemplatePriceCalculationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        
-        # Get quantity
+
         quantity = data["quantity"]
         if quantity < template.min_quantity:
-            return Response({
-                "error": f"Minimum quantity is {template.min_quantity}"
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Determine GSM and print sides
-        gsm = data.get("gsm") or template.default_gsm or 300
-        print_sides = data.get("print_sides") or template.default_print_sides or "DUPLEX"
-        sides = 2 if print_sides == "DUPLEX" else 1
-        
-        # Get shop (optional - for shop-specific pricing)
-        shop_id = data.get("shop_id")
-        shop = None
-        if shop_id:
-            try:
-                shop = Shop.objects.get(id=shop_id, is_active=True)
-            except Shop.DoesNotExist:
-                pass
-        
-        # Calculate base price
-        base_unit_price = template.base_price
-        
-        # If shop provided, try to use their actual pricing
-        print_price_per_side = Decimal("0")
-        paper_price = Decimal("0")
-        
-        if shop:
-            # Get print price
-            print_price_obj = DigitalPrintPrice.objects.filter(
-                shop=shop,
-                sheet_size="A3",  # Default to A3 for templates
-                color_mode="COLOR",
-                is_active=True
-            ).first()
-            if print_price_obj:
-                print_price_per_side = print_price_obj.click_rate
-            
-            # Get paper price by GSM
-            paper_price_obj = PaperGSMPrice.objects.filter(
-                shop=shop,
-                sheet_size="A3",
-                gsm=gsm,
-                is_active=True
-            ).first()
-            if paper_price_obj:
-                paper_price = paper_price_obj.price_per_sheet
-        
-        # Calculate print and paper costs
-        if print_price_per_side > 0 and paper_price > 0:
-            # Use actual shop pricing
-            print_cost = print_price_per_side * sides
-            unit_price = print_cost + paper_price
-        else:
-            # Fall back to template base price
-            unit_price = base_unit_price
-        
-        # Add option modifiers
-        selected_option_ids = data.get("selected_option_ids", [])
-        option_modifiers = Decimal("0")
-        if selected_option_ids:
-            options = TemplateOption.objects.filter(
-                id__in=selected_option_ids,
-                template=template
+            return Response(
+                {"error": f"Minimum quantity is {template.min_quantity}"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            option_modifiers = sum(opt.price_modifier for opt in options)
-        
-        # Add finishing costs
-        selected_finishing_ids = data.get("selected_finishing_ids", [])
-        finishing_cost = Decimal("0")
-        mandatory_finishing = template.finishing_options.filter(is_mandatory=True)
-        
-        # Include mandatory finishing
-        for finish in mandatory_finishing:
-            finishing_cost += finish.price_adjustment
-        
-        # Include selected optional finishing
-        if selected_finishing_ids:
-            optional_finishing = template.finishing_options.filter(
-                id__in=selected_finishing_ids,
-                is_mandatory=False
-            )
-            for finish in optional_finishing:
-                finishing_cost += finish.price_adjustment
-        
-        # Calculate totals
-        unit_total = unit_price + option_modifiers + finishing_cost
-        subtotal = unit_total * quantity
-        tax_rate = Decimal("16.00")  # 16% VAT
-        tax_amount = subtotal * (tax_rate / 100)
-        total = subtotal + tax_amount
-        
-        return Response({
-            "template_id": template.id,
-            "template_title": template.title,
-            "quantity": quantity,
-            "gsm": gsm,
-            "print_sides": print_sides,
-            "pricing": {
-                "unit_price": str(unit_price),
-                "option_modifiers": str(option_modifiers),
-                "finishing_per_unit": str(finishing_cost),
-                "unit_total": str(unit_total),
-                "subtotal": str(subtotal),
-                "tax_rate": str(tax_rate),
-                "tax_amount": str(tax_amount),
-                "total": str(total),
-            },
-            "breakdown": {
-                "print_price_per_side": str(print_price_per_side) if print_price_per_side else None,
-                "paper_price": str(paper_price) if paper_price else None,
-                "using_shop_pricing": shop is not None and print_price_per_side > 0,
-            }
-        })
+
+        result = calculate_template_price(template, data)
+        return Response(result)
 
     @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def create_quote(self, request, slug=None):
