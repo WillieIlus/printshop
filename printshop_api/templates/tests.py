@@ -372,8 +372,9 @@ class TemplateCategoryAPITests(APITestCase):
         url = "/api/templates/categories/"
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Should only return active categories
-        slugs = [c["slug"] for c in response.data]
+        # Should only return active categories (paginated response has 'results')
+        data = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        slugs = [c["slug"] for c in data] if isinstance(data, list) else []
         self.assertIn("business-cards", slugs)
         self.assertNotIn("archived", slugs)
 
@@ -446,22 +447,23 @@ class PrintTemplateAPITests(APITestCase):
     
     def test_template_list_public_access(self):
         """Test template list is publicly accessible."""
-        url = "/api/templates/templates/"
+        url = "/api/templates/"
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
     
     def test_template_list_filters_inactive(self):
         """Test that inactive templates are filtered out."""
-        url = "/api/templates/templates/"
+        url = "/api/templates/"
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        slugs = [t["slug"] for t in response.data]
+        data = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        slugs = [t["slug"] for t in data] if isinstance(data, list) else []
         self.assertIn("premium-business-cards", slugs)
         self.assertNotIn("archived-template", slugs)
     
     def test_template_detail(self):
-        """Test template detail endpoint."""
-        url = f"/api/templates/templates/{self.template.id}/"
+        """Test template detail endpoint (uses slug, not id)."""
+        url = f"/api/templates/{self.template.slug}/"
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["title"], "Premium Business Cards")
@@ -469,20 +471,21 @@ class PrintTemplateAPITests(APITestCase):
         self.assertIn("options", response.data)
     
     def test_template_filter_by_category(self):
-        """Test filtering templates by category."""
-        url = f"/api/templates/templates/?category={self.category.id}"
+        """Test filtering templates by category slug."""
+        url = f"/api/templates/?category__slug={self.category.slug}"
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Only active templates in this category
-        self.assertEqual(len(response.data), 1)
+        data = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        self.assertEqual(len(data), 1)
     
     def test_template_search(self):
         """Test searching templates."""
-        url = "/api/templates/templates/?search=premium"
+        url = "/api/templates/?search=premium"
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["title"], "Premium Business Cards")
+        data = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["title"], "Premium Business Cards")
 
 
 class TemplateGalleryAPITests(APITestCase):
@@ -543,13 +546,13 @@ class TemplateGalleryAPITests(APITestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
-        # Should have categories with templates nested
+        # Should have categories with templates nested (structure: {category: {...}, templates: [...]})
         self.assertIn("categories", response.data)
         categories = response.data["categories"]
         
-        # Find business cards category
+        # Find business cards category (each item has "category" and "templates" keys)
         cards_cat = next(
-            (c for c in categories if c["slug"] == "business-cards"),
+            (c for c in categories if c.get("category", {}).get("slug") == "business-cards"),
             None
         )
         self.assertIsNotNone(cards_cat)
@@ -629,11 +632,11 @@ class TemplateQuoteRequestAPITests(APITestCase):
     
     def test_create_quote_requires_auth(self):
         """Test that quote creation requires authentication."""
-        url = f"/api/templates/templates/{self.template.id}/create_quote/"
+        url = f"/api/templates/{self.template.slug}/create-quote/"
         data = {
-            "shop_slug": self.shop.slug,
+            "shop_id": self.shop.id,
             "quantity": 100,
-            "notes": "Please deliver by Friday"
+            "customer_notes": "Please deliver by Friday"
         }
         response = self.client.post(url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -641,11 +644,11 @@ class TemplateQuoteRequestAPITests(APITestCase):
     def test_create_quote_authenticated(self):
         """Test authenticated user can create quote from template."""
         self.client.force_authenticate(user=self.user)
-        url = f"/api/templates/templates/{self.template.id}/create_quote/"
+        url = f"/api/templates/{self.template.slug}/create-quote/"
         data = {
-            "shop_slug": self.shop.slug,
+            "shop_id": self.shop.id,
             "quantity": 100,
-            "notes": "Please deliver by Friday"
+            "customer_notes": "Please deliver by Friday"
         }
         response = self.client.post(url, data, format="json")
         self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_201_CREATED])

@@ -152,7 +152,7 @@ class PrintTemplateViewSet(viewsets.ReadOnlyModelViewSet):
         result = calculate_template_price(template, data)
         return Response(result)
 
-    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=True, methods=["post"], url_path="create-quote", permission_classes=[permissions.IsAuthenticated])
     def create_quote(self, request, slug=None):
         """
         Create a quote request from this template.

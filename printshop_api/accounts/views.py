@@ -336,9 +336,9 @@ class ProfileViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get", "patch"], permission_classes=[permissions.IsAuthenticated])
     def me(self, request: Request) -> Response:
         """Get or update the current authenticated user's profile."""
-        profile = Profile.objects.select_related("user").prefetch_related(
+        profile, _ = Profile.objects.select_related("user").prefetch_related(
             "social_links"
-        ).get(user=request.user)
+        ).get_or_create(user=request.user, defaults={})
         
         if request.method == "PATCH":
             serializer = ProfileUpdateSerializer(profile, data=request.data, partial=True)
@@ -385,7 +385,10 @@ class SocialLinkViewSet(viewsets.ModelViewSet):
         """Add profile to context for validation and creation."""
         context = super().get_serializer_context()
         if self.request.user.is_authenticated:
-            context["profile"] = getattr(self.request.user, "profile", None)
+            try:
+                context["profile"] = self.request.user.profile
+            except Profile.DoesNotExist:
+                context["profile"] = Profile.objects.create(user=self.request.user)
         return context
 
 

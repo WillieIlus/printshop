@@ -201,10 +201,14 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 EMAIL_CONFIRMATION_URL = f"{FRONTEND_URL}/auth/confirm-email"
 PASSWORD_RESET_URL = f"{FRONTEND_URL}/auth/reset-password"
 
-# CSRF trusted origins (for cookie-based flows if any)
+# CSRF trusted origins (for cookie-based flows, admin, form submissions)
+# Local: frontend localhost:3000 -> backend localhost:8000
+# Prod: frontend printy.ke -> backend willieilus.pythonanywhere.com
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
     "https://printy.ke",
     "https://www.printy.ke",
     "https://willieilus.pythonanywhere.com",
@@ -249,6 +253,9 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
 ]
+
+# Expose Authorization so frontend can read token from response if needed
+CORS_EXPOSE_HEADERS = ["authorization", "content-type"]
 
 # settings.py additions
 
