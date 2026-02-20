@@ -1,5 +1,7 @@
 from decimal import Decimal
 from django.db import models
+from django.db.models import SET_NULL
+from django.core.exceptions import ValidationError
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
@@ -79,6 +81,15 @@ class PrintTemplate(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="print_templates",
     )
+    created_by_shop = models.ForeignKey(
+        "shops.Shop",
+        null=True,
+        blank=True,
+        on_delete=SET_NULL,
+        related_name="templates",
+        verbose_name=_("created by shop"),
+        help_text=_("Shop/company that created this template (for gallery display)"),
+    )
     description = models.TextField(
         _("description"),
         blank=True,
@@ -120,6 +131,24 @@ class PrintTemplate(TimeStampedModel):
         null=True,
         blank=True,
         help_text=_("Default paper weight (e.g., 300)"),
+    )
+    min_gsm = models.PositiveIntegerField(
+        _("minimum GSM"),
+        null=True,
+        blank=True,
+        help_text=_("Minimum allowed paper weight (e.g., 250 for business cards)"),
+    )
+    max_gsm = models.PositiveIntegerField(
+        _("maximum GSM"),
+        null=True,
+        blank=True,
+        help_text=_("Maximum allowed paper weight (e.g., 200 for flyers)"),
+    )
+    allowed_gsm_values = models.JSONField(
+        _("allowed GSM values"),
+        null=True,
+        blank=True,
+        help_text=_("Optional list of allowed GSM values (e.g., [250, 300, 350])"),
     )
     default_print_sides = models.CharField(
         _("default print sides"),
@@ -170,6 +199,14 @@ class PrintTemplate(TimeStampedModel):
         if not self.slug:
             self.slug = slugify(self.title)
         super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        if self.min_gsm is not None and self.max_gsm is not None:
+            if self.min_gsm > self.max_gsm:
+                raise ValidationError(
+                    _("min_gsm must be less than or equal to max_gsm")
+                )
 
     def get_starting_price_display(self) -> str:
         """Returns price formatted for the gallery grid."""

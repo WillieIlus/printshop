@@ -63,7 +63,8 @@ class PrintTemplateViewSet(viewsets.ReadOnlyModelViewSet):
     """
     
     queryset = PrintTemplate.objects.filter(is_active=True).select_related(
-        "category"
+        "category",
+        "created_by_shop",
     ).prefetch_related(
         "finishing_options",
         "options"
@@ -97,6 +98,43 @@ class PrintTemplateViewSet(viewsets.ReadOnlyModelViewSet):
         templates = templates.distinct()[:12]
         serializer = PrintTemplateListSerializer(templates, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="constraints")
+    def constraints(self, request, slug=None):
+        """
+        Get template GSM constraints and shop capability constraints (if created_by_shop exists).
+
+        GET /api/templates/{slug}/constraints/
+
+        Returns:
+        {
+            "template": {"min_gsm": 250, "max_gsm": 350, "allowed_gsm_values": null},
+            "shop_capabilities": [{"sheet_size": "A4", "min_gsm": null, "max_gsm": 300}, ...]
+        }
+        """
+        template = self.get_object()
+        data = {
+            "template": {
+                "min_gsm": template.min_gsm,
+                "max_gsm": template.max_gsm,
+                "allowed_gsm_values": template.allowed_gsm_values,
+            }
+        }
+        shop_capabilities = []
+        if template.created_by_shop_id:
+            from shops.models import ShopPaperCapability
+
+            caps = ShopPaperCapability.objects.filter(
+                shop=template.created_by_shop
+            ).order_by("sheet_size")
+            for cap in caps:
+                shop_capabilities.append({
+                    "sheet_size": cap.sheet_size,
+                    "min_gsm": cap.min_gsm,
+                    "max_gsm": cap.max_gsm,
+                })
+        data["shop_capabilities"] = shop_capabilities
+        return Response(data)
 
     @action(detail=True, methods=["post"], url_path="calculate-price")
     def calculate_price(self, request, slug=None):
@@ -138,7 +176,10 @@ class PrintTemplateViewSet(viewsets.ReadOnlyModelViewSet):
         }
         """
         template = self.get_object()
-        serializer = TemplatePriceCalculationSerializer(data=request.data)
+        serializer = TemplatePriceCalculationSerializer(
+            data=request.data,
+            context={"template": template},
+        )
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 

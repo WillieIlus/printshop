@@ -77,6 +77,7 @@ class PrintTemplateListSerializer(serializers.ModelSerializer):
     
     category_name = serializers.CharField(source="category.name", read_only=True)
     category_slug = serializers.CharField(source="category.slug", read_only=True)
+    created_by_shop = serializers.SerializerMethodField()
     badges = serializers.SerializerMethodField()
     starting_price = serializers.CharField(
         source="get_starting_price_display", 
@@ -91,6 +92,7 @@ class PrintTemplateListSerializer(serializers.ModelSerializer):
             "slug",
             "category_name",
             "category_slug",
+            "created_by_shop",
             "base_price",
             "starting_price",
             "preview_image",
@@ -99,6 +101,15 @@ class PrintTemplateListSerializer(serializers.ModelSerializer):
             "badges",
             "min_quantity",
         ]
+
+    def get_created_by_shop(self, obj):
+        if obj.created_by_shop_id:
+            return {
+                "id": obj.created_by_shop.id,
+                "name": obj.created_by_shop.name,
+                "slug": obj.created_by_shop.slug,
+            }
+        return None
 
     def get_badges(self, obj):
         return obj.get_gallery_badges()
@@ -124,6 +135,7 @@ class PrintTemplateDetailSerializer(serializers.ModelSerializer):
     grouped_options = serializers.SerializerMethodField()
     mandatory_finishing = serializers.SerializerMethodField()
     optional_finishing = serializers.SerializerMethodField()
+    created_by_shop = serializers.SerializerMethodField()
 
     class Meta:
         model = PrintTemplate
@@ -133,12 +145,16 @@ class PrintTemplateDetailSerializer(serializers.ModelSerializer):
             "slug",
             "description",
             "category",
+            "created_by_shop",
             "base_price",
             "starting_price",
             "min_quantity",
             "final_width",
             "final_height",
             "default_gsm",
+            "min_gsm",
+            "max_gsm",
+            "allowed_gsm_values",
             "default_print_sides",
             "print_sides_display",
             "preview_image",
@@ -160,6 +176,15 @@ class PrintTemplateDetailSerializer(serializers.ModelSerializer):
 
     def get_badges(self, obj):
         return obj.get_gallery_badges()
+
+    def get_created_by_shop(self, obj):
+        if obj.created_by_shop_id:
+            return {
+                "id": obj.created_by_shop.id,
+                "name": obj.created_by_shop.name,
+                "slug": obj.created_by_shop.slug,
+            }
+        return None
 
     def get_grouped_options(self, obj):
         """Group options by type for easier frontend rendering."""
@@ -241,6 +266,7 @@ class TemplatePriceCalculationSerializer(serializers.Serializer):
     - gsm (optional; default from template)
     - paper_type (optional; GLOSS/MATTE/BOND/ART)
     - machine_id (optional; not used in STRATEGY 1)
+    - shop_slug or shop_id (optional; for shop-specific GSM capability enforcement)
 
     Large format mode (when unit=SQM or area/width/height/material_type provided):
     - unit = "SQM"
@@ -251,6 +277,10 @@ class TemplatePriceCalculationSerializer(serializers.Serializer):
 
     # Common
     quantity = serializers.IntegerField(min_value=1)
+
+    # Shop for capability enforcement (optional; or use template.created_by_shop for gallery)
+    shop_slug = serializers.SlugField(required=False, allow_null=True)
+    shop_id = serializers.IntegerField(required=False, allow_null=True)
 
     # Digital mode
     sheet_size = serializers.ChoiceField(
@@ -300,7 +330,7 @@ class TemplatePriceCalculationSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
-        """Validate large format has required fields when in SQM mode."""
+        """Validate large format has required fields and GSM constraints for digital mode."""
         is_large = (
             attrs.get("unit") == "SQM"
             or attrs.get("area_sqm") is not None
@@ -315,4 +345,34 @@ class TemplatePriceCalculationSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     "Large format requires area_sqm or both width_m and height_m"
                 )
+        else:
+            # Digital mode: validate GSM against template and shop constraints
+            template = self.context.get("template")
+            if template:
+                gsm = attrs.get("gsm") or template.default_gsm or 300
+                sheet_size = attrs.get("sheet_size") or "A4"
+                shop = None
+                shop_slug = attrs.get("shop_slug")
+                shop_id = attrs.get("shop_id")
+                if shop_slug or shop_id:
+                    from shops.models import Shop
+
+                    if shop_slug:
+                        shop = Shop.objects.filter(slug=shop_slug, is_active=True).first()
+                        if not shop:
+                            raise serializers.ValidationError(
+                                {"shop_slug": "Shop not found or inactive"}
+                            )
+                    else:
+                        shop = Shop.objects.filter(id=shop_id, is_active=True).first()
+                        if not shop:
+                            raise serializers.ValidationError(
+                                {"shop_id": "Shop not found or inactive"}
+                            )
+                try:
+                    from .services.gsm_validation import validate_gsm_for_calculation
+
+                    validate_gsm_for_calculation(template, gsm, sheet_size, shop)
+                except ValueError as e:
+                    raise serializers.ValidationError({"gsm": str(e)})
         return attrs

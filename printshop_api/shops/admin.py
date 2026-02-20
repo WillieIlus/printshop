@@ -17,7 +17,7 @@ from django.http import HttpRequest
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from .models import OpeningHours, Shop, ShopClaim, ShopMember, ShopSocialLink
+from .models import OpeningHours, Shop, ShopClaim, ShopMember, ShopPaperCapability, ShopSocialLink
 
 
 # =============================================================================
@@ -45,6 +45,15 @@ class OpeningHoursInline(admin.TabularInline):
     extra = 0
     fields = ["weekday", "from_hour", "to_hour", "is_closed"]
     ordering = ["weekday", "from_hour"]
+
+
+class ShopPaperCapabilityInline(admin.TabularInline):
+    """Inline admin for paper capabilities within Shop admin."""
+
+    model = ShopPaperCapability
+    extra = 0
+    fields = ["sheet_size", "min_gsm", "max_gsm"]
+    ordering = ["sheet_size"]
 
 
 class ShopSocialLinkInline(admin.TabularInline):
@@ -160,6 +169,7 @@ class ShopAdmin(admin.ModelAdmin):
     inlines = [
         ShopMemberInline,
         OpeningHoursInline,
+        ShopPaperCapabilityInline,
         ShopSocialLinkInline,
         ShopClaimInline,
     ]
@@ -596,3 +606,30 @@ class ShopClaimAdmin(admin.ModelAdmin):
     def has_add_permission(self, request: HttpRequest) -> bool:
         """Claims should be created through the API, not admin."""
         return False
+
+
+# =============================================================================
+# Shop Paper Capability Admin (Standalone)
+# =============================================================================
+
+
+@admin.register(ShopPaperCapability)
+class ShopPaperCapabilityAdmin(admin.ModelAdmin):
+    """Admin interface for ShopPaperCapability model."""
+
+    list_display = [
+        "shop_name",
+        "sheet_size",
+        "min_gsm",
+        "max_gsm",
+        "created_at",
+    ]
+    list_filter = ["sheet_size", "shop"]
+    search_fields = ["shop__name"]
+    autocomplete_fields = ["shop"]
+    list_select_related = ["shop"]
+    ordering = ["shop", "sheet_size"]
+
+    @admin.display(description=_("Shop"), ordering="shop__name")
+    def shop_name(self, obj: ShopPaperCapability) -> str:
+        return obj.shop.name
