@@ -24,9 +24,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-zn%=rezxu0ky1bf6@jr!!s)se=!me5^evur%aco3hyndpw8)gz'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() in ("true", "1", "yes")
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    "printy.ke",
+    "www.printy.ke",
+    "willieilus.pythonanywhere.com",
+    ".pythonanywhere.com",
+]
 
 
 # Application definition
@@ -190,9 +197,18 @@ DEFAULT_FROM_EMAIL = "noreply@example.com"
 # Frontend URLs (for email links)
 # =============================================================================
 
-FRONTEND_URL = "http://localhost:3000"  # Replace with your frontend URL
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 EMAIL_CONFIRMATION_URL = f"{FRONTEND_URL}/auth/confirm-email"
 PASSWORD_RESET_URL = f"{FRONTEND_URL}/auth/reset-password"
+
+# CSRF trusted origins (for cookie-based flows if any)
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://printy.ke",
+    "https://www.printy.ke",
+    "https://willieilus.pythonanywhere.com",
+]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -207,12 +223,17 @@ MIDDLEWARE = [
 ]
 
 # =============================================================================
-# CORS Configuration
+# CORS Configuration (local + production)
 # =============================================================================
 
 CORS_ALLOWED_ORIGINS = [
+    # Local development
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    # Production: frontend at printy.ke, backend at pythonanywhere
+    "https://printy.ke",
+    "https://www.printy.ke",
+    "https://willieilus.pythonanywhere.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True

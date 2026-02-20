@@ -6,11 +6,13 @@ This document maps every endpoint the UI calls to the backend implementation. Al
 
 | UI Call | Full Path | Backend | Status |
 |---------|-----------|---------|--------|
-| `API.auth.login` | `POST /api/auth/api-auth/login/` | `accounts.views.LoginView` | ✅ |
-| `API.auth.refresh` | `POST /api/auth/api-auth/token/refresh/` | `TokenRefreshView` | ✅ |
+| `API.auth.login` | `POST /api/auth/login/` or `POST /api/auth/api-auth/login/` | `accounts.views.LoginView` | ✅ |
+| `API.auth.refresh` | `POST /api/auth/token/refresh/` or `POST /api/auth/api-auth/token/refresh/` | `TokenRefreshView` | ✅ |
 | `API.auth.register` | `POST /api/auth/register/` | `accounts.views.RegisterView` | ✅ |
-| `API.auth.forgotPassword` | `POST /api/auth/api-auth/password/reset/` | `PasswordResetRequestView` | ✅ |
-| `API.auth.resetConfirm` | `POST /api/auth/api-auth/password/reset/confirm/` | `PasswordResetConfirmView` | ✅ |
+| `API.auth.forgotPassword` | `POST /api/auth/password/reset/` or `POST /api/auth/api-auth/password/reset/` | `PasswordResetRequestView` | ✅ |
+| `API.auth.resetConfirm` | `POST /api/auth/password/reset/confirm/` or `POST /api/auth/api-auth/password/reset/confirm/` | `PasswordResetConfirmView` | ✅ |
+
+**Note:** Both clean paths (`/api/auth/login/`) and legacy paths (`/api/auth/api-auth/login/`) are supported for frontend compatibility.
 
 **Body alignment:**
 - Password reset request: `{ email }` ✅

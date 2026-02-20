@@ -703,7 +703,7 @@ class SocialLinkCreateSerializer(SocialLinkSerializer):
     """Serializer for creating social links (profile set from context)."""
     
     class Meta(SocialLinkSerializer.Meta):
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "profile", "created_at", "updated_at"]
     
     def create(self, validated_data: dict[str, Any]) -> SocialLink:
         """Set profile from context."""

@@ -35,20 +35,30 @@ router.register(r"profiles", ProfileViewSet, basename="profile")
 router.register(r"social-links", SocialLinkViewSet, basename="sociallink")
 
 # Authentication URLs
+# Primary: /api/auth/login/, /api/auth/token/refresh/, etc.
+# Legacy: /api/auth/api-auth/login/ (for frontend compatibility)
 auth_urlpatterns = [
     # Registration & confirmation
     path("register/", RegisterView.as_view(), name="register"),
     path("confirm-email/", EmailConfirmationView.as_view(), name="confirm-email"),
     
-    # Login/Logout
-    path("api-auth/login/", LoginView.as_view(), name="login"),
-    path("api-auth/logout/", LogoutView.as_view(), name="logout"),
-    path("api-auth/token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
+    # Login/Logout (JWT) - primary paths
+    path("login/", LoginView.as_view(), name="login"),
+    path("logout/", LogoutView.as_view(), name="logout"),
+    path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
+    
+    # Legacy auth paths (frontend may use api-auth/ prefix)
+    path("api-auth/login/", LoginView.as_view(), name="login-legacy"),
+    path("api-auth/logout/", LogoutView.as_view(), name="logout-legacy"),
+    path("api-auth/token/refresh/", TokenRefreshView.as_view(), name="token-refresh-legacy"),
     
     # Password management
-    path("api-auth/password/change/", PasswordChangeView.as_view(), name="password-change"),
-    path("api-auth/password/reset/", PasswordResetRequestView.as_view(), name="password-reset"),
-    path("api-auth/password/reset/confirm/", PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
+    path("password/change/", PasswordChangeView.as_view(), name="password-change"),
+    path("password/reset/", PasswordResetRequestView.as_view(), name="password-reset"),
+    path("password/reset/confirm/", PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
+    path("api-auth/password/change/", PasswordChangeView.as_view(), name="password-change-legacy"),
+    path("api-auth/password/reset/", PasswordResetRequestView.as_view(), name="password-reset-legacy"),
+    path("api-auth/password/reset/confirm/", PasswordResetConfirmView.as_view(), name="password-reset-confirm-legacy"),
     
     # Social authentication
     path("social/google/", GoogleLoginView.as_view(), name="social-google"),
