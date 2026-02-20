@@ -12,6 +12,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     EmailConfirmationView,
+    EmailVerifyView,
     GitHubLoginView,
     GoogleLoginView,
     LoginView,
@@ -22,6 +23,8 @@ from .views import (
     ProfileSocialLinksView,
     ProfileViewSet,
     RegisterView,
+    ResendCodeView,
+    SignupView,
     SocialLinkViewSet,
     UserViewSet,
 )
@@ -36,12 +39,16 @@ router.register(r"social-links", SocialLinkViewSet, basename="sociallink")
 
 # Authentication URLs
 auth_urlpatterns = [
-    # Registration & confirmation
+    # Signup & OTP verification
+    path("signup/", SignupView.as_view(), name="signup"),
+    path("email/verify/", EmailVerifyView.as_view(), name="email-verify"),
+    path("email/resend/", ResendCodeView.as_view(), name="email-resend"),
+    # Registration & confirmation (legacy)
     path("register/", RegisterView.as_view(), name="register"),
     path("confirm-email/", EmailConfirmationView.as_view(), name="confirm-email"),
-    
     # Login/Logout
-    path("api-auth/login/", LoginView.as_view(), name="login"),
+    path("login/", LoginView.as_view(), name="login"),
+    path("api-auth/login/", LoginView.as_view(), name="login-legacy"),
     path("api-auth/logout/", LogoutView.as_view(), name="logout"),
     path("api-auth/token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     

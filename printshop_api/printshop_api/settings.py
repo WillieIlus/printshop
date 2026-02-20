@@ -269,6 +269,13 @@ TEMPLATES = [
 WSGI_APPLICATION = 'printshop_api.wsgi.application'
 
 
+# Cache (for rate limiting, etc.)
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
+
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
