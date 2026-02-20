@@ -127,7 +127,13 @@ class PrintTemplate(TimeStampedModel):
         choices=PrintSides.choices,
         default=PrintSides.DUPLEX,
     )
-    
+    ups_per_sheet = models.PositiveIntegerField(
+        _("units per sheet"),
+        null=True,
+        blank=True,
+        help_text=_("Imposition: how many finished units fit on one sheet (N-Up). Used for sheets_needed calculation."),
+    )
+
     # Display properties
     preview_image = models.ImageField(
         _("preview image"),

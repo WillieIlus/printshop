@@ -5,6 +5,7 @@ Uses STRATEGY 1: base_price as starting point with deltas for options/finishings
 Public demo calculator - no shop-specific pricing.
 """
 
+import math
 from decimal import Decimal
 from typing import Any
 
@@ -30,6 +31,36 @@ MATERIAL_TYPES = ("BANNER", "VINYL", "REFLECTIVE")
 def _format_kes(amount: Decimal) -> str:
     """Format amount as KES string."""
     return f"KES {amount:,.2f}"
+
+
+def _compute_imposition(
+    template: PrintTemplate,
+    quantity: int,
+) -> dict[str, Any]:
+    """
+    Compute imposition fields when template has ups_per_sheet.
+    Returns dict with ups_per_sheet, sheets_needed, calculation_steps, imposition_notes.
+    When ups_per_sheet is None, returns empty imposition fields (null/empty for backward compat).
+    """
+    ups = getattr(template, "ups_per_sheet", None)
+    if ups is None or ups < 1:
+        return {
+            "ups_per_sheet": None,
+            "sheets_needed": None,
+            "calculation_steps": [],
+            "imposition_notes": [],
+        }
+    sheets = math.ceil(quantity / ups)
+    steps = [f"{quantity} ÷ {ups} = {sheets} sheets"]
+    notes = []
+    if quantity % ups != 0:
+        notes.append("Rounded up to whole sheets")
+    return {
+        "ups_per_sheet": ups,
+        "sheets_needed": sheets,
+        "calculation_steps": steps,
+        "imposition_notes": notes,
+    }
 
 
 def _get_duplex_multiplier(template: PrintTemplate, print_sides: str) -> Decimal:
@@ -211,6 +242,9 @@ def _calculate_large_format_price(
     subtotal = material_total + finishing_total
     total = subtotal
 
+    imposition = _compute_imposition(template, quantity)
+    notes.extend(imposition["imposition_notes"])
+
     return {
         "printing": {
             "amount": _format_kes(Decimal("0")),
@@ -231,6 +265,9 @@ def _calculate_large_format_price(
         "subtotal": _format_kes(subtotal),
         "total": _format_kes(total),
         "notes": notes,
+        "ups_per_sheet": imposition["ups_per_sheet"],
+        "sheets_needed": imposition["sheets_needed"],
+        "calculation_steps": imposition["calculation_steps"],
     }
 
 
@@ -275,6 +312,9 @@ def _calculate_digital_price(
     subtotal = printing_total + material_total + finishing_total + option_modifiers
     total = subtotal
 
+    imposition = _compute_imposition(template, quantity)
+    notes.extend(imposition["imposition_notes"])
+
     response = {
         "printing": {
             "amount": _format_kes(printing_total),
@@ -294,6 +334,9 @@ def _calculate_digital_price(
         "subtotal": _format_kes(subtotal),
         "total": _format_kes(total),
         "notes": notes,
+        "ups_per_sheet": imposition["ups_per_sheet"],
+        "sheets_needed": imposition["sheets_needed"],
+        "calculation_steps": imposition["calculation_steps"],
     }
     if option_modifiers != 0:
         response["options"] = {

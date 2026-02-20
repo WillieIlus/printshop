@@ -896,3 +896,37 @@ class TemplateCalculatePriceAPITests(APITestCase):
         response = self.client.post(url, {"quantity": 50}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Minimum quantity", response.data["error"])
+
+    def test_imposition_quantity_500_ups_25_sheets_20(self):
+        """Test imposition: quantity=500, ups_per_sheet=25 => sheets_needed=20."""
+        self.template.ups_per_sheet = 25
+        self.template.save()
+        url = f"/api/templates/{self.template.slug}/calculate-price/"
+        response = self.client.post(url, {"quantity": 500}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["ups_per_sheet"], 25)
+        self.assertEqual(response.data["sheets_needed"], 20)
+        self.assertIn("500 ÷ 25 = 20 sheets", response.data["calculation_steps"])
+        # 500 divides evenly - no rounding note
+        self.assertNotIn("Rounded up to whole sheets", response.data["notes"])
+
+    def test_imposition_quantity_501_ups_25_sheets_21(self):
+        """Test imposition: quantity=501, ups_per_sheet=25 => sheets_needed=21."""
+        self.template.ups_per_sheet = 25
+        self.template.save()
+        url = f"/api/templates/{self.template.slug}/calculate-price/"
+        response = self.client.post(url, {"quantity": 501}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["ups_per_sheet"], 25)
+        self.assertEqual(response.data["sheets_needed"], 21)
+        self.assertIn("501 ÷ 25 = 21 sheets", response.data["calculation_steps"])
+        self.assertIn("Rounded up to whole sheets", response.data["notes"])
+
+    def test_imposition_backward_compat_when_no_ups(self):
+        """Test imposition fields are null/empty when template has no ups_per_sheet."""
+        url = f"/api/templates/{self.template.slug}/calculate-price/"
+        response = self.client.post(url, {"quantity": 100}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["ups_per_sheet"])
+        self.assertIsNone(response.data["sheets_needed"])
+        self.assertEqual(response.data["calculation_steps"], [])
