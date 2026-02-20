@@ -1,5 +1,6 @@
 from decimal import Decimal
 from django.db import models
+from django.core.exceptions import ValidationError
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
@@ -57,12 +58,19 @@ class PrintTemplate(TimeStampedModel):
     """
     A print product template for the gallery (e.g. Premium Business Cards).
     Customers can browse these and convert them into quote requests.
+    Every template belongs to a specific shop.
     """
 
     class PrintSides(models.TextChoices):
         SIMPLEX = "SIMPLEX", _("Single-sided")
         DUPLEX = "DUPLEX", _("Double-sided")
 
+    shop = models.ForeignKey(
+        "shops.Shop",
+        on_delete=models.CASCADE,
+        related_name="templates",
+        help_text=_("The shop that owns this template"),
+    )
     title = models.CharField(
         _("title"),
         max_length=200,
@@ -70,7 +78,6 @@ class PrintTemplate(TimeStampedModel):
     )
     slug = models.SlugField(
         _("slug"),
-        unique=True,
         max_length=200,
         blank=True,
     )
@@ -121,6 +128,25 @@ class PrintTemplate(TimeStampedModel):
         blank=True,
         help_text=_("Default paper weight (e.g., 300)"),
     )
+    # GSM constraints (enforced at calculate-price)
+    min_gsm = models.PositiveIntegerField(
+        _("minimum GSM"),
+        null=True,
+        blank=True,
+        help_text=_("Minimum allowed paper weight"),
+    )
+    max_gsm = models.PositiveIntegerField(
+        _("maximum GSM"),
+        null=True,
+        blank=True,
+        help_text=_("Maximum allowed paper weight"),
+    )
+    allowed_gsm_values = models.JSONField(
+        _("allowed GSM values"),
+        null=True,
+        blank=True,
+        help_text=_("Optional list of allowed GSM values (e.g. [200, 300, 350])"),
+    )
     default_print_sides = models.CharField(
         _("default print sides"),
         max_length=10,
@@ -162,6 +188,20 @@ class PrintTemplate(TimeStampedModel):
         verbose_name = _("print template")
         verbose_name_plural = _("print templates")
         ordering = ["category", "title"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shop", "slug"],
+                name="unique_template_slug_per_shop",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.min_gsm is not None and self.max_gsm is not None:
+            if self.min_gsm > self.max_gsm:
+                raise ValidationError(
+                    _("min_gsm must be less than or equal to max_gsm")
+                )
 
     def __str__(self) -> str:
         return self.title

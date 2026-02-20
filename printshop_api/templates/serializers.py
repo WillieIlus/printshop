@@ -31,7 +31,11 @@ class TemplateCategorySerializer(serializers.ModelSerializer):
         ]
 
     def get_template_count(self, obj):
-        return obj.print_templates.filter(is_active=True).count()
+        qs = obj.print_templates.filter(is_active=True)
+        shop = self.context.get("shop")
+        if shop is not None:
+            qs = qs.filter(shop=shop)
+        return qs.count()
 
 
 class TemplateFinishingSerializer(serializers.ModelSerializer):
@@ -75,6 +79,7 @@ class TemplateOptionSerializer(serializers.ModelSerializer):
 class PrintTemplateListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for listing templates in gallery."""
     
+    template_slug = serializers.CharField(source="slug", read_only=True)
     category_name = serializers.CharField(source="category.name", read_only=True)
     category_slug = serializers.CharField(source="category.slug", read_only=True)
     badges = serializers.SerializerMethodField()
@@ -82,13 +87,14 @@ class PrintTemplateListSerializer(serializers.ModelSerializer):
         source="get_starting_price_display", 
         read_only=True
     )
+    constraints = serializers.SerializerMethodField()
 
     class Meta:
         model = PrintTemplate
         fields = [
             "id",
             "title",
-            "slug",
+            "template_slug",
             "category_name",
             "category_slug",
             "base_price",
@@ -98,15 +104,27 @@ class PrintTemplateListSerializer(serializers.ModelSerializer):
             "weight_label",
             "badges",
             "min_quantity",
+            "constraints",
         ]
 
     def get_badges(self, obj):
         return obj.get_gallery_badges()
 
+    def get_constraints(self, obj):
+        c = {}
+        if obj.min_gsm is not None:
+            c["min_gsm"] = obj.min_gsm
+        if obj.max_gsm is not None:
+            c["max_gsm"] = obj.max_gsm
+        if obj.allowed_gsm_values:
+            c["allowed_gsm_values"] = obj.allowed_gsm_values
+        return c
+
 
 class PrintTemplateDetailSerializer(serializers.ModelSerializer):
     """Full serializer for template detail view."""
     
+    template_slug = serializers.CharField(source="slug", read_only=True)
     category = TemplateCategorySerializer(read_only=True)
     finishing_options = TemplateFinishingSerializer(many=True, read_only=True)
     options = TemplateOptionSerializer(many=True, read_only=True)
@@ -119,6 +137,7 @@ class PrintTemplateDetailSerializer(serializers.ModelSerializer):
         source="get_default_print_sides_display",
         read_only=True
     )
+    constraints = serializers.SerializerMethodField()
     
     # Grouped options for frontend
     grouped_options = serializers.SerializerMethodField()
@@ -130,12 +149,13 @@ class PrintTemplateDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
-            "slug",
+            "template_slug",
             "description",
             "category",
             "base_price",
             "starting_price",
             "min_quantity",
+            "constraints",
             "final_width",
             "final_height",
             "default_gsm",
@@ -160,6 +180,16 @@ class PrintTemplateDetailSerializer(serializers.ModelSerializer):
 
     def get_badges(self, obj):
         return obj.get_gallery_badges()
+
+    def get_constraints(self, obj):
+        c = {}
+        if obj.min_gsm is not None:
+            c["min_gsm"] = obj.min_gsm
+        if obj.max_gsm is not None:
+            c["max_gsm"] = obj.max_gsm
+        if obj.allowed_gsm_values:
+            c["allowed_gsm_values"] = obj.allowed_gsm_values
+        return c
 
     def get_grouped_options(self, obj):
         """Group options by type for easier frontend rendering."""

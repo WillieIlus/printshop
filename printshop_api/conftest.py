@@ -292,9 +292,10 @@ def template_category(db):
 
 
 @pytest.fixture
-def print_template(db, template_category):
+def print_template(db, template_category, shop):
     """Create a print template."""
     return PrintTemplate.objects.create(
+        shop=shop,
         title="Premium Business Cards",
         slug="premium-business-cards",
         category=template_category,

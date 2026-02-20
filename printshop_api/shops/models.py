@@ -286,3 +286,51 @@ class ShopClaim(TimeStampedModel):
 
     def __str__(self):
         return f"Claim by {self.user} for '{self.business_name}' ({self.get_status_display()})"
+
+
+class ShopPaperCapability(TimeStampedModel):
+    """
+    Shop's paper capability per sheet size.
+    Defines min/max GSM the shop can handle for each sheet size.
+    Used together with template GSM constraints when calculating prices.
+    """
+
+    class SheetSize(models.TextChoices):
+        A5 = "A5", _("A5")
+        A4 = "A4", _("A4")
+        A3 = "A3", _("A3")
+        SRA3 = "SRA3", _("SRA3")
+
+    shop = models.ForeignKey(
+        Shop,
+        on_delete=models.CASCADE,
+        related_name="paper_capabilities",
+    )
+    sheet_size = models.CharField(
+        _("sheet size"),
+        max_length=20,
+        choices=SheetSize.choices,
+    )
+    max_gsm = models.PositiveIntegerField(
+        _("maximum GSM"),
+        help_text=_("Maximum paper weight this shop can handle for this size"),
+    )
+    min_gsm = models.PositiveIntegerField(
+        _("minimum GSM"),
+        null=True,
+        blank=True,
+        help_text=_("Optional minimum paper weight"),
+    )
+
+    class Meta:
+        verbose_name = _("shop paper capability")
+        verbose_name_plural = _("shop paper capabilities")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shop", "sheet_size"],
+                name="unique_shop_sheet_size_capability",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.shop.name} - {self.sheet_size}: {self.min_gsm or 0}-{self.max_gsm}gsm"
