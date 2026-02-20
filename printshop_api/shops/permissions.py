@@ -18,7 +18,19 @@ from .models import Shop, ShopMember
 class IsShopOwner(permissions.BasePermission):
     """
     Allow access only to the shop owner.
+    For list/create: checks shop_slug in URL. For retrieve/update/delete: checks object's shop.
     """
+    
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        """Check shop ownership when shop_slug is in URL (list/create)."""
+        shop_slug = view.kwargs.get("shop_slug")
+        if not shop_slug:
+            return True
+        try:
+            shop = Shop.objects.get(slug=shop_slug)
+            return shop.owner == request.user
+        except Shop.DoesNotExist:
+            return False
     
     def has_object_permission(self, request: Request, view: APIView, obj) -> bool:
         # Handle Shop object directly

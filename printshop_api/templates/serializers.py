@@ -12,6 +12,148 @@ from .models import (
 )
 
 
+# =============================================================================
+# Shop-scoped management serializers
+# =============================================================================
+
+
+class ShopTemplateCategorySerializer(serializers.ModelSerializer):
+    """Serializer for shop-scoped template category CRUD."""
+    template_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TemplateCategory
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "description",
+            "icon_svg_path",
+            "display_order",
+            "is_active",
+            "template_count",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "template_count"]
+
+    def get_template_count(self, obj):
+        return obj.print_templates.filter(is_active=True).count()
+
+    def validate_slug(self, value):
+        shop = self.context.get("shop")
+        if not shop:
+            return value
+        qs = TemplateCategory.objects.filter(shop=shop, slug=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A category with this slug already exists.")
+        return value
+
+
+class ShopPrintTemplateSerializer(serializers.ModelSerializer):
+    """Read serializer for shop-scoped templates with absolute preview_image URL."""
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    category_slug = serializers.CharField(source="category.slug", read_only=True)
+    preview_image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PrintTemplate
+        fields = [
+            "id",
+            "title",
+            "slug",
+            "category",
+            "category_name",
+            "category_slug",
+            "description",
+            "base_price",
+            "min_quantity",
+            "min_gsm",
+            "max_gsm",
+            "final_width",
+            "final_height",
+            "default_gsm",
+            "default_print_sides",
+            "ups_per_sheet",
+            "preview_image",
+            "preview_image_url",
+            "dimensions_label",
+            "weight_label",
+            "is_popular",
+            "is_best_value",
+            "is_new",
+            "is_active",
+            "meta_description",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_preview_image_url(self, obj):
+        if obj.preview_image:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.preview_image.url)
+            return obj.preview_image.url
+        return None
+
+
+class ShopPrintTemplateCreateUpdateSerializer(serializers.ModelSerializer):
+    """Write serializer for shop-scoped template create/update."""
+
+    class Meta:
+        model = PrintTemplate
+        fields = [
+            "title",
+            "slug",
+            "category",
+            "description",
+            "base_price",
+            "min_quantity",
+            "min_gsm",
+            "max_gsm",
+            "final_width",
+            "final_height",
+            "default_gsm",
+            "default_print_sides",
+            "ups_per_sheet",
+            "preview_image",
+            "dimensions_label",
+            "weight_label",
+            "is_popular",
+            "is_best_value",
+            "is_new",
+            "is_active",
+            "meta_description",
+        ]
+
+    def validate_category(self, value):
+        shop = self.context.get("shop")
+        if not shop:
+            return value
+        if value.shop_id != shop.pk:
+            raise serializers.ValidationError("Category must belong to this shop.")
+        return value
+
+    def validate_slug(self, value):
+        shop = self.context.get("shop")
+        if not shop or not value:
+            return value
+        qs = PrintTemplate.objects.filter(shop=shop, slug=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A template with this slug already exists.")
+        return value
+
+
+# =============================================================================
+# Public gallery serializers
+# =============================================================================
+
+
 class TemplateCategorySerializer(serializers.ModelSerializer):
     """Serializer for template categories."""
     
@@ -82,6 +224,7 @@ class PrintTemplateListSerializer(serializers.ModelSerializer):
         source="get_starting_price_display", 
         read_only=True
     )
+    preview_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = PrintTemplate
@@ -94,6 +237,7 @@ class PrintTemplateListSerializer(serializers.ModelSerializer):
             "base_price",
             "starting_price",
             "preview_image",
+            "preview_image_url",
             "dimensions_label",
             "weight_label",
             "badges",
@@ -102,6 +246,14 @@ class PrintTemplateListSerializer(serializers.ModelSerializer):
 
     def get_badges(self, obj):
         return obj.get_gallery_badges()
+
+    def get_preview_image_url(self, obj):
+        if obj.preview_image:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.preview_image.url)
+            return obj.preview_image.url
+        return None
 
 
 class PrintTemplateDetailSerializer(serializers.ModelSerializer):
@@ -119,6 +271,7 @@ class PrintTemplateDetailSerializer(serializers.ModelSerializer):
         source="get_default_print_sides_display",
         read_only=True
     )
+    preview_image_url = serializers.SerializerMethodField()
     
     # Grouped options for frontend
     grouped_options = serializers.SerializerMethodField()
@@ -142,6 +295,7 @@ class PrintTemplateDetailSerializer(serializers.ModelSerializer):
             "default_print_sides",
             "print_sides_display",
             "preview_image",
+            "preview_image_url",
             "dimensions_label",
             "weight_label",
             "badges",
@@ -160,6 +314,14 @@ class PrintTemplateDetailSerializer(serializers.ModelSerializer):
 
     def get_badges(self, obj):
         return obj.get_gallery_badges()
+
+    def get_preview_image_url(self, obj):
+        if obj.preview_image:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.preview_image.url)
+            return obj.preview_image.url
+        return None
 
     def get_grouped_options(self, obj):
         """Group options by type for easier frontend rendering."""

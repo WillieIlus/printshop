@@ -24,14 +24,24 @@ class PrintingPriceSerializer(serializers.ModelSerializer):
     profit_per_side = serializers.DecimalField(
         max_digits=10, decimal_places=2, read_only=True
     )
+    sheet_size_display = serializers.CharField(source="get_sheet_size_display", read_only=True)
+    color_mode_display = serializers.CharField(source="get_color_mode_display", read_only=True)
     
     class Meta:
         model = PrintingPrice
         fields = [
-            "id", "machine", "sheet_size", "color_mode",
+            "id", "machine", "sheet_size", "sheet_size_display", "color_mode", "color_mode_display",
+            "selling_price_per_side", "selling_price_duplex_per_sheet", "buying_price_per_side",
             "profit_per_side", "is_active", "is_default_seeded", "needs_review"
         ]
-        read_only_fields = ["id", "profit_per_side"]
+        read_only_fields = ["id", "profit_per_side", "sheet_size_display", "color_mode_display"]
+    
+    def validate_machine(self, value):
+        """Ensure machine belongs to the shop."""
+        shop = self.context.get("shop")
+        if shop and value.shop_id != shop.pk:
+            raise serializers.ValidationError("Machine must belong to this shop.")
+        return value
 
 
 class PaperPriceSerializer(serializers.ModelSerializer):

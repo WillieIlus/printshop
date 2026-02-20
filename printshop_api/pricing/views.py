@@ -7,6 +7,7 @@ Two main use cases:
 2. Customers: View rate card and calculate prices
 """
 
+from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -14,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shops.models import Shop
-from shops.permissions import IsShopOwner, IsShopMember
+from shops.permissions import IsShopOwner
 
 from .models import (
     PrintingPrice,
@@ -54,10 +55,15 @@ class ShopPricingMixin:
     
     def get_shop(self):
         shop_slug = self.kwargs.get("shop_slug")
-        return Shop.objects.get(slug=shop_slug)
+        return get_object_or_404(Shop, slug=shop_slug)
     
     def get_queryset(self):
         return self.queryset.filter(shop=self.get_shop())
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["shop"] = self.get_shop()
+        return context
     
     def perform_create(self, serializer):
         serializer.save(shop=self.get_shop())
@@ -82,7 +88,7 @@ class PrintingPriceViewSet(ShopPricingMixin, viewsets.ModelViewSet):
     
     queryset = PrintingPrice.objects.all()
     serializer_class = PrintingPriceSerializer
-    permission_classes = [IsAuthenticated, IsShopMember]
+    permission_classes = [IsAuthenticated, IsShopOwner]
 
 
 class PaperPriceViewSet(ShopPricingMixin, viewsets.ModelViewSet):
@@ -95,7 +101,7 @@ class PaperPriceViewSet(ShopPricingMixin, viewsets.ModelViewSet):
     
     queryset = PaperPrice.objects.all()
     serializer_class = PaperPriceSerializer
-    permission_classes = [IsAuthenticated, IsShopMember]
+    permission_classes = [IsAuthenticated, IsShopOwner]
 
 
 class FinishingServiceViewSet(ShopPricingMixin, viewsets.ModelViewSet):
@@ -108,7 +114,7 @@ class FinishingServiceViewSet(ShopPricingMixin, viewsets.ModelViewSet):
     
     queryset = FinishingService.objects.all()
     serializer_class = FinishingServiceSerializer
-    permission_classes = [IsAuthenticated, IsShopMember]
+    permission_classes = [IsAuthenticated, IsShopOwner]
 
 
 class VolumeDiscountViewSet(ShopPricingMixin, viewsets.ModelViewSet):
@@ -128,7 +134,7 @@ class MaterialPriceViewSet(ShopPricingMixin, viewsets.ModelViewSet):
     
     queryset = MaterialPrice.objects.all()
     serializer_class = MaterialPriceSerializer
-    permission_classes = [IsAuthenticated, IsShopMember]
+    permission_classes = [IsAuthenticated, IsShopOwner]
 
 
 # =============================================================================
@@ -192,7 +198,7 @@ class PricingStatusView(APIView):
     GET /api/shops/<slug>/pricing/status/
     Returns counts of rows and needs_review per category.
     """
-    permission_classes = [IsAuthenticated, IsShopMember]
+    permission_classes = [IsAuthenticated, IsShopOwner]
 
     def get(self, request, shop_slug):
         try:

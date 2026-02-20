@@ -9,6 +9,14 @@ from common.models import TimeStampedModel
 class TemplateCategory(TimeStampedModel):
     """Category for print templates, e.g. Business Cards, Flyers."""
 
+    shop = models.ForeignKey(
+        "shops.Shop",
+        on_delete=models.CASCADE,
+        related_name="template_categories",
+        null=True,
+        blank=True,
+        help_text=_("Shop that owns this category. Null = global/system category."),
+    )
     name = models.CharField(
         _("name"),
         max_length=100,
@@ -16,8 +24,8 @@ class TemplateCategory(TimeStampedModel):
     )
     slug = models.SlugField(
         _("slug"),
-        unique=True,
         max_length=100,
+        help_text=_("Unique per shop (or globally when shop is null)."),
     )
     icon_svg_path = models.TextField(
         _("icon SVG path"),
@@ -43,6 +51,18 @@ class TemplateCategory(TimeStampedModel):
         verbose_name = _("template category")
         verbose_name_plural = _("template categories")
         ordering = ["display_order", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(shop__isnull=True),
+                name="unique_global_category_slug",
+            ),
+            models.UniqueConstraint(
+                fields=["shop", "slug"],
+                condition=models.Q(shop__isnull=False),
+                name="unique_shop_category_slug",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name
@@ -70,9 +90,17 @@ class PrintTemplate(TimeStampedModel):
     )
     slug = models.SlugField(
         _("slug"),
-        unique=True,
         max_length=200,
         blank=True,
+        help_text=_("Unique per shop (or globally when shop is null)."),
+    )
+    shop = models.ForeignKey(
+        "shops.Shop",
+        on_delete=models.CASCADE,
+        related_name="print_templates",
+        null=True,
+        blank=True,
+        help_text=_("Shop that owns this template. Null = global/system template."),
     )
     category = models.ForeignKey(
         TemplateCategory,
@@ -97,7 +125,19 @@ class PrintTemplate(TimeStampedModel):
         default=1,
         help_text=_("Minimum order quantity"),
     )
-    
+    min_gsm = models.PositiveIntegerField(
+        _("minimum GSM"),
+        null=True,
+        blank=True,
+        help_text=_("Minimum paper weight allowed (e.g., 130)"),
+    )
+    max_gsm = models.PositiveIntegerField(
+        _("maximum GSM"),
+        null=True,
+        blank=True,
+        help_text=_("Maximum paper weight allowed (e.g., 400)"),
+    )
+
     # Product specifications (for quote conversion)
     final_width = models.DecimalField(
         _("width (mm)"),
@@ -168,6 +208,18 @@ class PrintTemplate(TimeStampedModel):
         verbose_name = _("print template")
         verbose_name_plural = _("print templates")
         ordering = ["category", "title"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(shop__isnull=True),
+                name="unique_global_template_slug",
+            ),
+            models.UniqueConstraint(
+                fields=["shop", "slug"],
+                condition=models.Q(shop__isnull=False),
+                name="unique_shop_template_slug",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.title

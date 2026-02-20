@@ -15,7 +15,7 @@ API Structure:
     - /materials/      - Inventory materials  
     - /pricing/        - Shop pricing
     - /quotes/         - Quote management
-    - /product-templates/ - Shop templates
+    - /templates/         - Shop templates (categories + templates CRUD)
 - /api/templates/      - Public template gallery
 - /api/my-quotes/      - Customer's quotes
 - /api/claims/         - Shop ownership claims
@@ -43,6 +43,7 @@ urlpatterns = [
     path("api/", include("subscription.urls", namespace="subscription")),
     path("api/", include("inventory.urls", namespace="inventory")),
     path("api/shops/<slug:shop_slug>/pricing/", include("pricing.urls", namespace="pricing")),
+    path("api/shops/<slug:shop_slug>/templates/", include("templates.shop_urls", namespace="shop-templates")),
     path("api/pricing/", include("pricing.urls_defaults")),
     
     # Public template gallery

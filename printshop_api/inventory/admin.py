@@ -6,7 +6,17 @@ Simple admin for inventory management.
 from django.contrib import admin
 from django.utils.html import format_html
 
+from pricing.models import PrintingPrice
+
 from .models import Machine, PaperStock
+
+
+class PrintingPriceInline(admin.TabularInline):
+    """Inline for printing prices within Machine admin."""
+    model = PrintingPrice
+    extra = 0
+    fields = ["sheet_size", "color_mode", "selling_price_per_side", "selling_price_duplex_per_sheet", "is_active"]
+    ordering = ["sheet_size", "color_mode"]
 
 
 @admin.register(Machine)
@@ -38,7 +48,8 @@ class MachineAdmin(admin.ModelAdmin):
             "fields": ("is_active",)
         }),
     )
-    
+    inlines = [PrintingPriceInline]
+
     def max_size_display(self, obj):
         if obj.max_paper_width and obj.max_paper_height:
             return f"{obj.max_paper_width} × {obj.max_paper_height} mm"

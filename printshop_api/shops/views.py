@@ -84,10 +84,15 @@ class ShopViewSet(viewsets.ModelViewSet):
             "opening_hours", "social_links", "machines"
         )
         
-        # For list views, show only active shops unless admin
+        # For list: authenticated users see only their shops (owner or member)
         if self.action == "list":
-            if not self.request.user.is_staff:
-                queryset = queryset.filter(is_active=True)
+            if self.request.user.is_authenticated:
+                queryset = queryset.filter(
+                    Q(owner=self.request.user)
+                    | Q(members__user=self.request.user, members__is_active=True)
+                ).distinct()
+            else:
+                queryset = queryset.none()
         
         return queryset
     
@@ -105,13 +110,15 @@ class ShopViewSet(viewsets.ModelViewSet):
     
     def get_permissions(self):
         """Return appropriate permissions based on action."""
-        if self.action in ["list", "retrieve"]:
-            return [permissions.AllowAny()]
-        elif self.action == "create":
+        if self.action == "list":
             return [permissions.IsAuthenticated()]
-        elif self.action in ["update", "partial_update"]:
+        if self.action == "retrieve":
+            return [permissions.AllowAny()]
+        if self.action == "create":
+            return [permissions.IsAuthenticated()]
+        if self.action in ["update", "partial_update"]:
             return [permissions.IsAuthenticated(), IsShopManagerOrOwner()]
-        elif self.action in ["destroy", "transfer_ownership"]:
+        if self.action in ["destroy", "transfer_ownership"]:
             return [permissions.IsAuthenticated(), IsShopOwner()]
         return [permissions.IsAuthenticated()]
     
@@ -132,6 +139,22 @@ class ShopViewSet(viewsets.ModelViewSet):
             "member_of": member_serializer.data,
         })
     
+    @action(detail=True, methods=["get"], permission_classes=[permissions.IsAuthenticated, IsShopOwner])
+    def setup_status(self, request: Request, slug: str = None) -> Response:
+        """Return onboarding checklist status for the shop."""
+        shop = self.get_object()
+        from inventory.models import Machine
+        from pricing.models import PrintingPrice, PaperPrice, MaterialPrice
+        from templates.models import PrintTemplate
+
+        return Response({
+            "has_machines": Machine.objects.filter(shop=shop).exists(),
+            "has_printing_prices": PrintingPrice.objects.filter(shop=shop, is_active=True).exists(),
+            "has_paper_prices": PaperPrice.objects.filter(shop=shop, is_active=True).exists(),
+            "has_material_prices": MaterialPrice.objects.filter(shop=shop, is_active=True).exists(),
+            "has_templates": PrintTemplate.objects.filter(shop=shop, is_active=True).exists(),
+        })
+
     @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated, IsShopOwner])
     def transfer_ownership(self, request: Request, slug: str = None) -> Response:
         """Transfer shop ownership to another member."""

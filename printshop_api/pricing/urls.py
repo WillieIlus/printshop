@@ -39,10 +39,11 @@ from .views import (
 
 
 # Router for shop-scoped CRUD endpoints
+# Paths: printing-prices, paper-prices, material-prices (onboarding UX)
 router = DefaultRouter()
-router.register(r"printing", PrintingPriceViewSet, basename="printing-price")
-router.register(r"paper", PaperPriceViewSet, basename="paper-price")
-router.register(r"material", MaterialPriceViewSet, basename="material-price")
+router.register(r"printing-prices", PrintingPriceViewSet, basename="printing-price")
+router.register(r"paper-prices", PaperPriceViewSet, basename="paper-price")
+router.register(r"material-prices", MaterialPriceViewSet, basename="material-price")
 router.register(r"finishing", FinishingServiceViewSet, basename="finishing-service")
 router.register(r"discounts", VolumeDiscountViewSet, basename="volume-discount")
 

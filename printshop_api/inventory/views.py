@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from shops.models import Shop
-from shops.permissions import IsShopManagerOrOwner, IsShopMember
+from shops.permissions import IsShopOwner, IsShopManagerOrOwner, IsShopMember
 
 from .models import Machine, MachineCapability, Material, MaterialStock, PaperStock
 from .serializers import (
@@ -50,13 +50,8 @@ class MachineViewSet(viewsets.ModelViewSet):
         return context
 
     def get_permissions(self):
-        """
-        Members can view machines.
-        Only Managers/Owners can manage (create/update/delete) them.
-        """
-        if self.action in ['list', 'retrieve']:
-            return [permissions.IsAuthenticated(), IsShopMember()]
-        return [permissions.IsAuthenticated(), IsShopManagerOrOwner()]
+        """Only shop owner can manage machines (onboarding)."""
+        return [permissions.IsAuthenticated(), IsShopOwner()]
 
     def _check_machine_limit(self, shop, machine_type):
         """Enforce subscription limits. Returns (allowed, error_message)."""

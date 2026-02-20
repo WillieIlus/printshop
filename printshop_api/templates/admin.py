@@ -32,16 +32,18 @@ class TemplateOptionInline(admin.TabularInline):
 
 @admin.register(TemplateCategory)
 class TemplateCategoryAdmin(SuperuserOrTestimonialAddMixin, admin.ModelAdmin):
-    list_display = ["name", "slug", "display_order", "template_count", "is_active", "created_at"]
-    list_filter = ["is_active"]
+    list_display = ["display_order", "name", "slug", "shop", "template_count", "is_active", "created_at"]
+    list_display_links = ["name"]
+    list_filter = ["shop", "is_active"]
     prepopulated_fields = {"slug": ("name",)}
-    search_fields = ["name"]
+    search_fields = ["name", "slug"]
     list_editable = ["display_order", "is_active"]
     ordering = ["display_order", "name"]
 
+    autocomplete_fields = ["shop"]
     fieldsets = (
         (None, {
-            "fields": ("name", "slug", "description")
+            "fields": ("shop", "name", "slug", "description")
         }),
         (_("Display"), {
             "fields": ("icon_svg_path", "display_order", "is_active")
@@ -60,30 +62,37 @@ class TemplateCategoryAdmin(SuperuserOrTestimonialAddMixin, admin.ModelAdmin):
 
 @admin.register(PrintTemplate)
 class PrintTemplateAdmin(SuperuserOrTestimonialAddMixin, admin.ModelAdmin):
+    list_display_links = ["title"]
     list_display = [
+        "shop",
         "title",
+        "slug",
         "category",
-        "base_price_display",
+        "min_quantity",
+        "min_gsm",
+        "max_gsm",
+        "base_price",
         "dimensions_label",
         "weight_label",
         "badges_display",
         "is_active",
         "created_at",
     ]
-    list_filter = ["category", "is_popular", "is_best_value", "is_new", "is_active"]
-    search_fields = ["title", "category__name", "description"]
+    list_filter = ["shop", "category", "is_popular", "is_best_value", "is_new", "is_active"]
+    search_fields = ["title", "slug", "category__name", "description"]
     list_select_related = ["category"]
-    list_editable = ["is_active"]
+    list_editable = ["min_quantity", "min_gsm", "max_gsm", "base_price", "is_active"]
     prepopulated_fields = {"slug": ("title",)}
     inlines = [TemplateFinishingInline, TemplateOptionInline]
     ordering = ["category", "title"]
 
+    autocomplete_fields = ["shop", "category"]
     fieldsets = (
         (None, {
-            "fields": ("title", "slug", "category", "description")
+            "fields": ("shop", "title", "slug", "category", "description")
         }),
         (_("Pricing"), {
-            "fields": ("base_price", "min_quantity")
+            "fields": ("base_price", "min_quantity", "min_gsm", "max_gsm")
         }),
         (_("Specifications"), {
             "fields": ("final_width", "final_height", "default_gsm", "default_print_sides"),

@@ -1,5 +1,6 @@
 # templates/views.py
 
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
@@ -31,7 +32,11 @@ class TemplateCategoryViewSet(viewsets.ReadOnlyModelViewSet):
     Endpoint: /api/templates/categories/
     """
     
-    queryset = TemplateCategory.objects.filter(is_active=True)
+    queryset = TemplateCategory.objects.filter(
+        is_active=True
+    ).filter(
+        Q(shop__isnull=True) | Q(shop__is_active=True)
+    )
     serializer_class = TemplateCategorySerializer
     permission_classes = [permissions.AllowAny]
     lookup_field = "slug"
@@ -62,9 +67,11 @@ class PrintTemplateViewSet(viewsets.ReadOnlyModelViewSet):
     - Create quote requests
     """
     
-    queryset = PrintTemplate.objects.filter(is_active=True).select_related(
-        "category"
-    ).prefetch_related(
+    queryset = PrintTemplate.objects.filter(
+        is_active=True
+    ).filter(
+        Q(shop__isnull=True) | Q(shop__is_active=True)
+    ).select_related("category", "shop").prefetch_related(
         "finishing_options",
         "options"
     )

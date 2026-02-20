@@ -82,7 +82,9 @@ AUTH_USER_MODEL = "accounts.User"
 SITE_ID = 1
 
 REST_FRAMEWORK = {
+    # Dual auth: Session for browsable API / admin testing, JWT for frontend
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [

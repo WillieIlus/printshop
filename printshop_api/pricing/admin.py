@@ -28,13 +28,14 @@ class PrintingPriceAdmin(admin.ModelAdmin):
         "machine",
         "sheet_size",
         "color_mode",
-        "selling_price_display",
-        "buying_price_display",
+        "selling_price_per_side",
+        "selling_price_duplex_per_sheet",
+        "buying_price_per_side",
         "profit_display",
-        "is_active"
+        "is_active",
     ]
-    list_filter = ["shop", "sheet_size", "color_mode", "is_active"]
-    list_editable = ["is_active"]
+    list_filter = ["shop", "machine", "sheet_size", "color_mode", "is_active"]
+    list_editable = ["selling_price_per_side", "selling_price_duplex_per_sheet", "buying_price_per_side", "is_active"]
     search_fields = ["shop__name", "machine__name"]
     ordering = ["shop", "sheet_size", "color_mode"]
     
@@ -82,9 +83,9 @@ class PaperPriceAdmin(admin.ModelAdmin):
         "selling_price",
         "profit_display",
         "margin_display",
-        "is_active"
+        "is_active",
     ]
-    list_filter = ["shop", "sheet_size", "paper_type", "is_active"]
+    list_filter = ["shop", "sheet_size", "gsm", "paper_type", "is_active"]
     list_editable = ["buying_price", "selling_price", "is_active"]
     search_fields = ["shop__name"]
     ordering = ["shop", "sheet_size", "gsm"]
@@ -133,11 +134,11 @@ class MaterialPriceAdmin(admin.ModelAdmin):
         "material_type",
         "unit",
         "selling_price",
-        "buying_price_display",
-        "is_active"
+        "buying_price",
+        "is_active",
     ]
     list_filter = ["shop", "material_type", "unit", "is_active"]
-    list_editable = ["selling_price", "is_active"]
+    list_editable = ["selling_price", "buying_price", "is_active"]
     search_fields = ["shop__name"]
     ordering = ["shop", "material_type", "unit"]
     

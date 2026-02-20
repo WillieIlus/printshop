@@ -17,6 +17,8 @@ from django.http import HttpRequest
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
+from inventory.models import Machine
+
 from .models import OpeningHours, Shop, ShopClaim, ShopMember, ShopSocialLink
 
 
@@ -69,6 +71,17 @@ class ShopClaimInline(admin.TabularInline):
         return False
 
 
+class MachineInline(admin.TabularInline):
+    """Inline admin for machines within Shop admin."""
+    
+    model = Machine
+    extra = 0
+    fields = ["name", "machine_type", "is_active", "created_at"]
+    readonly_fields = ["created_at"]
+    ordering = ["name"]
+    show_change_link = True
+
+
 # =============================================================================
 # Shop Admin
 # =============================================================================
@@ -82,21 +95,13 @@ class ShopAdmin(admin.ModelAdmin):
         "name",
         "slug",
         "owner_email",
-        "city",
-        "state",
-        "country",
-        "is_verified_display",
         "is_active_display",
-        "member_count",
+        "machine_count",
+        "pricing_count",
+        "template_count",
         "created_at",
     ]
-    list_filter = [
-        "is_verified",
-        "is_active",
-        "country",
-        "state",
-        "created_at",
-    ]
+    list_filter = ["is_verified", "is_active", "country", "state", "created_at"]
     search_fields = [
         "name",
         "slug",
@@ -111,6 +116,9 @@ class ShopAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
         "member_count",
+        "machine_count",
+        "pricing_count",
+        "template_count",
         "google_maps_link",
     ]
     autocomplete_fields = ["owner"]
@@ -148,7 +156,7 @@ class ShopAdmin(admin.ModelAdmin):
             ),
         }),
         (_("Statistics"), {
-            "fields": ("member_count",),
+            "fields": ("member_count", "machine_count", "pricing_count", "template_count"),
             "classes": ("collapse",),
         }),
         (_("Timestamps"), {
@@ -158,6 +166,7 @@ class ShopAdmin(admin.ModelAdmin):
     )
     
     inlines = [
+        MachineInline,
         ShopMemberInline,
         OpeningHoursInline,
         ShopSocialLinkInline,
@@ -173,7 +182,9 @@ class ShopAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request: HttpRequest) -> QuerySet:
         return super().get_queryset(request).annotate(
-            _member_count=Count("members", distinct=True)
+            _member_count=Count("members", distinct=True),
+            _machine_count=Count("machines", distinct=True),
+            _template_count=Count("print_templates", distinct=True),
         ).select_related("owner")
     
     @admin.display(description=_("Owner Email"), ordering="owner__email")
@@ -193,6 +204,24 @@ class ShopAdmin(admin.ModelAdmin):
         if hasattr(obj, "_member_count"):
             return obj._member_count
         return obj.members.count()
+
+    @admin.display(description=_("Machines"))
+    def machine_count(self, obj: Shop) -> int:
+        if hasattr(obj, "_machine_count"):
+            return obj._machine_count
+        return obj.machines.count()
+
+    @admin.display(description=_("Pricing"))
+    def pricing_count(self, obj: Shop) -> str:
+        return str(
+            obj.printing_prices.count() + obj.paper_prices.count() + obj.material_prices.count()
+        )
+
+    @admin.display(description=_("Templates"))
+    def template_count(self, obj: Shop) -> int:
+        if hasattr(obj, "_template_count"):
+            return obj._template_count
+        return obj.print_templates.count()
     
     @admin.display(description=_("Google Maps"))
     def google_maps_link(self, obj: Shop) -> str:
