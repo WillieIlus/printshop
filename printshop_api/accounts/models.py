@@ -97,6 +97,10 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     - Email normalization: Ensures consistent storage and lookup.
     """
 
+    class Role(models.TextChoices):
+        CUSTOMER = "CUSTOMER", "Customer"
+        PRINTER = "PRINTER", "Printer"
+
     email = models.EmailField(
         "email address",
         unique=True,
@@ -131,6 +135,22 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     date_joined = models.DateTimeField(
         "date joined",
         default=timezone.now,
+    )
+    email_verified = models.BooleanField(
+        "email verified",
+        default=False,
+        help_text="Designates whether this user has verified their email via OTP.",
+    )
+    role = models.CharField(
+        "role",
+        max_length=20,
+        choices=Role.choices,
+        default=Role.CUSTOMER,
+    )
+    onboarding_completed = models.BooleanField(
+        "onboarding completed",
+        default=False,
+        help_text="Designates whether the user has completed onboarding.",
     )
 
     objects = UserManager()
@@ -285,3 +305,45 @@ class SocialLink(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.get_platform_display()} - {self.profile.user.email}"
+
+
+class EmailVerificationCode(TimeStampedModel):
+    """
+    OTP code for email verification.
+
+    - Multiple codes can exist historically; only the latest active (unexpired, unused)
+      matters for verification.
+    - Code expires in 10 minutes.
+    - used_at set on successful verification.
+    - attempts incremented on failure; optionally lock after e.g. 10 tries.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="verification_codes",
+    )
+    code = models.CharField("code", max_length=6)
+    expires_at = models.DateTimeField("expires at")
+    used_at = models.DateTimeField("used at", null=True, blank=True)
+    attempts = models.PositiveIntegerField("attempts", default=0)
+
+    class Meta:
+        verbose_name = "email verification code"
+        verbose_name_plural = "email verification codes"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Code for {self.user.email} (expires {self.expires_at})"
+
+    @property
+    def is_expired(self) -> bool:
+        return timezone.now() >= self.expires_at
+
+    @property
+    def is_used(self) -> bool:
+        return self.used_at is not None
+
+    @property
+    def is_active(self) -> bool:
+        return not self.is_expired and not self.is_used

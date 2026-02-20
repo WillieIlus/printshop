@@ -25,12 +25,13 @@ User = get_user_model()
 
 @pytest.fixture
 def user(db):
-    """Create a regular user."""
+    """Create a regular verified user."""
     return User.objects.create_user(
         email="testuser@example.com",
         password="testpass123",
         first_name="Test",
-        last_name="User"
+        last_name="User",
+        email_verified=True,
     )
 
 
@@ -41,7 +42,8 @@ def user2(db):
         email="testuser2@example.com",
         password="testpass123",
         first_name="Test2",
-        last_name="User2"
+        last_name="User2",
+        email_verified=True,
     )
 
 

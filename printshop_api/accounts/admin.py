@@ -6,7 +6,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django.utils.translation import gettext_lazy as _
 
-from .models import User, Profile, SocialLink
+from .models import User, Profile, SocialLink, EmailVerificationCode
 
 
 # ---------- Admin-only forms for the custom User ----------
@@ -97,14 +97,15 @@ class UserAdmin(BaseUserAdmin):
     add_form = UserCreationForm
     model = User
 
-    list_display = ("email", "first_name", "last_name", "is_staff", "is_active", "date_joined")
-    list_filter = ("is_staff", "is_superuser", "is_active", "groups")
+    list_display = ("email", "first_name", "last_name", "role", "email_verified", "is_staff", "is_active", "date_joined")
+    list_filter = ("is_staff", "is_superuser", "is_active", "email_verified", "role", "groups")
     search_fields = ("email", "first_name", "last_name")
     ordering = ("email",)
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         (_("Personal info"), {"fields": ("first_name", "last_name")}),
+        (_("Verification & role"), {"fields": ("email_verified", "role", "onboarding_completed")}),
         (_("Permissions"), {
             "fields": (
                 "is_active",
@@ -154,4 +155,12 @@ class SocialLinkAdmin(admin.ModelAdmin):
     list_display = ("profile", "platform", "username", "url", "is_primary", "created_at")
     list_filter = ("platform", "is_primary")
     search_fields = ("profile__user__email", "username", "url")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(EmailVerificationCode)
+class EmailVerificationCodeAdmin(admin.ModelAdmin):
+    list_display = ("user", "code", "expires_at", "used_at", "attempts", "created_at")
+    list_filter = ("used_at",)
+    search_fields = ("user__email", "code")
     readonly_fields = ("created_at", "updated_at")

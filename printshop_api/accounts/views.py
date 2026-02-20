@@ -26,6 +26,7 @@ from .permissions import IsAdminOrSelf, IsOwnerOrReadOnly, IsProfileOwner
 from .serializers import (
     CustomTokenObtainPairSerializer,
     EmailConfirmationSerializer,
+    EmailVerifySerializer,
     GitHubLoginSerializer,
     GoogleLoginSerializer,
     LogoutSerializer,
@@ -36,6 +37,8 @@ from .serializers import (
     ProfileUpdateSerializer,
     RegisterResponseSerializer,
     RegisterSerializer,
+    ResendCodeSerializer,
+    SignupSerializer,
     SocialLinkCreateSerializer,
     SocialLinkSerializer,
     SocialLoginResponseSerializer,
@@ -49,6 +52,79 @@ User = get_user_model()
 # =============================================================================
 # Registration & Email Confirmation Views
 # =============================================================================
+
+
+class SignupView(generics.CreateAPIView):
+    """
+    POST /api/auth/signup/
+
+    Create a new user and send OTP verification code.
+    Returns { email, message: "verification_sent" }.
+    """
+
+    serializer_class = SignupSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def create(self, request: Request, *args, **kwargs) -> Response:
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(
+            {"email": user.email, "message": "verification_sent"},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class EmailVerifyView(APIView):
+    """
+    POST /api/auth/email/verify/
+
+    Verify email with OTP code. Marks user as verified.
+    Input: { email, code }
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request: Request) -> Response:
+        serializer = EmailVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": "verified"}, status=status.HTTP_200_OK)
+
+
+class ResendCodeView(APIView):
+    """
+    POST /api/auth/email/resend/
+
+    Resend verification code. Rate limited (3 per minute per email).
+    Input: { email }
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request: Request) -> Response:
+        from django.core.cache import cache
+
+        serializer = ResendCodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+
+        # Rate limit: 3 per minute per email
+        cache_key = f"resend_code:{email}"
+        count = cache.get(cache_key, 0)
+        if count >= 3:
+            return Response(
+                {
+                    "detail": "Too many requests. Please try again later.",
+                    "code": "rate_limited",
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        cache.set(cache_key, count + 1, timeout=60)
+
+        serializer.save()
+        # Always return success (don't reveal if user exists)
+        return Response({"message": "resent"}, status=status.HTTP_200_OK)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -109,11 +185,12 @@ class EmailConfirmationView(APIView):
 class LoginView(TokenObtainPairView):
     """
     POST /api/auth/login/
-    
+
     Authenticate user with email and password.
     Returns JWT access and refresh tokens.
+    Blocks unverified users with 403 { detail, code: "email_not_verified" }.
     """
-    
+
     serializer_class = CustomTokenObtainPairSerializer
     permission_classes = [permissions.AllowAny]
     authentication_classes = []

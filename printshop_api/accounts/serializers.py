@@ -24,11 +24,13 @@ from django.core.mail import send_mail
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 # Import models - assumes they exist in the same app
 from .models import Profile, SocialLink
+from .services.verification import send_verification_code
 
 User = get_user_model()
 
@@ -56,18 +58,25 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         # Map email to username_field for parent validation
         attrs["email"] = attrs.get("email", "").lower()
-        return super().validate(attrs)
+        data = super().validate(attrs)
+        # Block login if email not verified
+        if not self.user.email_verified:
+            raise PermissionDenied(
+                detail={"detail": "Email not verified", "code": "email_not_verified"},
+            )
+        return data
     
     @classmethod
     def get_token(cls, user: User) -> RefreshToken:
         """Add custom claims to the token."""
         token = super().get_token(user)
-        
+
         # Add custom claims
         token["email"] = user.email
         token["first_name"] = user.first_name
         token["last_name"] = user.last_name
-        
+        token["role"] = user.role
+
         return token
 
 
@@ -178,6 +187,152 @@ class RegisterResponseSerializer(serializers.Serializer):
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
     message = serializers.CharField(read_only=True)
+
+
+# =============================================================================
+# OTP Email Verification Serializers
+# =============================================================================
+
+
+class SignupSerializer(serializers.Serializer):
+    """
+    Serializer for signup with OTP verification.
+    Creates user, sends verification code, returns { email, message }.
+    """
+
+    email = serializers.EmailField()
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        style={"input_type": "password"},
+    )
+    password_confirmation = serializers.CharField(
+        write_only=True,
+        style={"input_type": "password"},
+    )
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+
+    def validate_email(self, value: str) -> str:
+        """Ensure email is unique and normalized."""
+        email = value.lower()
+        if User.objects.filter(email=email).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return email
+
+    def validate_password(self, value: str) -> str:
+        """Validate password strength using Django's validators."""
+        validate_password(value)
+        return value
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Ensure passwords match."""
+        if attrs["password"] != attrs["password_confirmation"]:
+            raise serializers.ValidationError({
+                "password_confirmation": "Passwords do not match.",
+            })
+        return attrs
+
+    def create(self, validated_data: dict[str, Any]) -> User:
+        """Create user (active, email_verified=False) and send OTP."""
+        validated_data.pop("password_confirmation")
+        user = User.objects.create_user(
+            email=validated_data["email"],
+            password=validated_data["password"],
+            first_name=validated_data.get("first_name", ""),
+            last_name=validated_data.get("last_name", ""),
+            is_active=True,
+            email_verified=False,
+        )
+        Profile.objects.create(user=user)
+        send_verification_code(user)
+        return user
+
+
+class EmailVerifySerializer(serializers.Serializer):
+    """Serializer for email verification with OTP code."""
+
+    email = serializers.EmailField()
+    code = serializers.CharField(max_length=6, min_length=6)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Validate code against latest unexpired unused code."""
+        from django.utils import timezone
+
+        from accounts.models import EmailVerificationCode
+
+        email = attrs["email"].lower()
+        code = attrs["code"].strip()
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email": "No user found with this email."})
+
+        # Get latest active (unexpired, unused) code
+        verification = (
+            EmailVerificationCode.objects.filter(
+                user=user,
+                used_at__isnull=True,
+                expires_at__gt=timezone.now(),
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+        if not verification:
+            raise serializers.ValidationError(
+                {"code": "No valid verification code found. Please request a new one."}
+            )
+
+        if verification.attempts >= 10:
+            raise serializers.ValidationError(
+                {"code": "Too many failed attempts. Please request a new code."}
+            )
+
+        if verification.code != code:
+            verification.attempts += 1
+            verification.save(update_fields=["attempts"])
+            raise serializers.ValidationError({"code": "Invalid verification code."})
+
+        attrs["user"] = user
+        attrs["verification"] = verification
+        return attrs
+
+    def save(self) -> User:
+        """Mark user as verified and code as used."""
+        from django.utils import timezone
+
+        user = self.validated_data["user"]
+        verification = self.validated_data["verification"]
+
+        user.email_verified = True
+        user.save(update_fields=["email_verified"])
+
+        verification.used_at = timezone.now()
+        verification.save(update_fields=["used_at"])
+
+        return user
+
+
+class ResendCodeSerializer(serializers.Serializer):
+    """Serializer for resending verification code. Rate limited (e.g. 3/min)."""
+
+    email = serializers.EmailField()
+
+    def validate_email(self, value: str) -> str:
+        """Normalize email."""
+        return value.lower()
+
+    def save(self) -> User | None:
+        """Generate new code and send email if user exists. Returns user or None."""
+        email = self.validated_data["email"]
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return None
+        send_verification_code(user)
+        return user
 
 
 class EmailConfirmationSerializer(serializers.Serializer):
@@ -423,7 +578,8 @@ class SocialLoginSerializer(serializers.Serializer):
             defaults={
                 "first_name": self.user_info.get("first_name", ""),
                 "last_name": self.user_info.get("last_name", ""),
-                "is_active": True,  # Social login users are auto-activated
+                "is_active": True,
+                "email_verified": True,  # Provider-verified email
             }
         )
         
@@ -550,10 +706,11 @@ class SocialLoginResponseSerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     """
     Serializer for User model.
-    
+
     Exposes safe fields only - never exposes password.
+    Supports role update (CUSTOMER <-> PRINTER) via PATCH /api/users/me/.
     """
-    
+
     class Meta:
         model = User
         fields = [
@@ -563,8 +720,19 @@ class UserSerializer(serializers.ModelSerializer):
             "last_name",
             "is_active",
             "date_joined",
+            "email_verified",
+            "role",
+            "onboarding_completed",
         ]
-        read_only_fields = ["id", "email", "is_active", "date_joined"]
+        read_only_fields = ["id", "email", "is_active", "date_joined", "email_verified"]
+
+    def validate_role(self, value: str) -> str:
+        """Validate role is one of allowed choices."""
+        if value not in [User.Role.CUSTOMER, User.Role.PRINTER]:
+            raise serializers.ValidationError(
+                f"Role must be {User.Role.CUSTOMER} or {User.Role.PRINTER}."
+            )
+        return value
 
 
 class UserDetailSerializer(UserSerializer):
