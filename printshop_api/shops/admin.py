@@ -17,7 +17,7 @@ from django.http import HttpRequest
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from .models import OpeningHours, Shop, ShopClaim, ShopMember, ShopSocialLink
+from .models import OpeningHours, Shop, ShopClaim, ShopMember, ShopPaperCapability, ShopSocialLink
 
 
 # =============================================================================
@@ -596,3 +596,19 @@ class ShopClaimAdmin(admin.ModelAdmin):
     def has_add_permission(self, request: HttpRequest) -> bool:
         """Claims should be created through the API, not admin."""
         return False
+
+
+# =============================================================================
+# Shop Paper Capability Admin
+# =============================================================================
+
+
+@admin.register(ShopPaperCapability)
+class ShopPaperCapabilityAdmin(admin.ModelAdmin):
+    """Admin for shop paper capabilities per sheet size."""
+
+    list_display = ["shop", "sheet_size", "min_gsm", "max_gsm"]
+    list_filter = ["sheet_size", "shop"]
+    search_fields = ["shop__name"]
+    autocomplete_fields = ["shop"]
+    ordering = ["shop", "sheet_size"]

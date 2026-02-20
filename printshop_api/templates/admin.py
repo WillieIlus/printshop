@@ -62,6 +62,7 @@ class TemplateCategoryAdmin(SuperuserOrTestimonialAddMixin, admin.ModelAdmin):
 class PrintTemplateAdmin(SuperuserOrTestimonialAddMixin, admin.ModelAdmin):
     list_display = [
         "title",
+        "shop",
         "category",
         "base_price_display",
         "dimensions_label",
@@ -70,9 +71,9 @@ class PrintTemplateAdmin(SuperuserOrTestimonialAddMixin, admin.ModelAdmin):
         "is_active",
         "created_at",
     ]
-    list_filter = ["category", "is_popular", "is_best_value", "is_new", "is_active"]
+    list_filter = ["shop", "category", "is_popular", "is_best_value", "is_new", "is_active"]
     search_fields = ["title", "category__name", "description"]
-    list_select_related = ["category"]
+    list_select_related = ["shop", "category"]
     list_editable = ["is_active"]
     prepopulated_fields = {"slug": ("title",)}
     inlines = [TemplateFinishingInline, TemplateOptionInline]
@@ -80,7 +81,11 @@ class PrintTemplateAdmin(SuperuserOrTestimonialAddMixin, admin.ModelAdmin):
 
     fieldsets = (
         (None, {
-            "fields": ("title", "slug", "category", "description")
+            "fields": ("shop", "title", "slug", "category", "description")
+        }),
+        (_("GSM Constraints"), {
+            "fields": ("min_gsm", "max_gsm", "allowed_gsm_values"),
+            "classes": ("collapse",),
         }),
         (_("Pricing"), {
             "fields": ("base_price", "min_quantity")

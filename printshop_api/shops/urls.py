@@ -35,6 +35,9 @@ from quotes.urls import shop_quote_patterns
 # Import public pricing views
 from pricing.views import RateCardView, CalculatePriceView
 
+# Import shop-scoped template views
+from templates.views_shop import ShopTemplateCategoryViewSet, ShopPrintTemplateViewSet
+
 app_name = "shops"
 
 # Main router for shops and claims
@@ -97,6 +100,38 @@ urlpatterns = [
     # Public pricing endpoints (no auth required)
     path("shops/<slug:shop_slug>/rate-card/", RateCardView.as_view(), name="shop-rate-card"),
     path("shops/<slug:shop_slug>/calculate-price/", CalculatePriceView.as_view(), name="shop-calculate-price"),
+    
+    # Shop-scoped template endpoints (AllowAny for public browsing)
+    path(
+        "shops/<slug:shop_slug>/template-categories/",
+        ShopTemplateCategoryViewSet.as_view({"get": "list"}),
+        name="shop-template-categories-list",
+    ),
+    path(
+        "shops/<slug:shop_slug>/template-categories/<slug:slug>/",
+        ShopTemplateCategoryViewSet.as_view({"get": "retrieve"}),
+        name="shop-template-categories-detail",
+    ),
+    path(
+        "shops/<slug:shop_slug>/templates/",
+        ShopPrintTemplateViewSet.as_view({"get": "list"}),
+        name="shop-templates-list",
+    ),
+    path(
+        "shops/<slug:shop_slug>/templates/<slug:template_slug>/",
+        ShopPrintTemplateViewSet.as_view({"get": "retrieve"}),
+        name="shop-templates-detail",
+    ),
+    path(
+        "shops/<slug:shop_slug>/templates/<slug:template_slug>/calculate-price/",
+        ShopPrintTemplateViewSet.as_view({"post": "calculate_price"}),
+        name="shop-templates-calculate-price",
+    ),
+    path(
+        "shops/<slug:shop_slug>/templates/<slug:template_slug>/create-quote/",
+        ShopPrintTemplateViewSet.as_view({"post": "create_quote"}),
+        name="shop-templates-create-quote",
+    ),
 ]
 
 # Add quote patterns (nested under shops/<slug:shop_slug>/)
