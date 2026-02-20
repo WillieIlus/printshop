@@ -286,3 +286,52 @@ class ShopClaim(TimeStampedModel):
 
     def __str__(self):
         return f"Claim by {self.user} for '{self.business_name}' ({self.get_status_display()})"
+
+
+class ShopPaperCapability(TimeStampedModel):
+    """
+    Shop capability limits for paper weight (GSM) by sheet size.
+    Some shops may have max 300gsm for A4, others support up to 350gsm.
+    Used to enforce effective range = intersection(template range, shop capability).
+    """
+
+    class SheetSize(models.TextChoices):
+        A5 = "A5", _("A5")
+        A4 = "A4", _("A4")
+        A3 = "A3", _("A3")
+        SRA3 = "SRA3", _("SRA3")
+
+    shop = models.ForeignKey(
+        Shop,
+        on_delete=models.CASCADE,
+        related_name="paper_capabilities",
+    )
+    sheet_size = models.CharField(
+        _("sheet size"),
+        max_length=20,
+        choices=SheetSize.choices,
+    )
+    max_gsm = models.PositiveIntegerField(
+        _("maximum GSM"),
+        help_text=_("Maximum paper weight this shop supports for this sheet size"),
+    )
+    min_gsm = models.PositiveIntegerField(
+        _("minimum GSM"),
+        null=True,
+        blank=True,
+        help_text=_("Optional minimum paper weight"),
+    )
+
+    class Meta:
+        verbose_name = _("shop paper capability")
+        verbose_name_plural = _("shop paper capabilities")
+        ordering = ["shop", "sheet_size"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["shop", "sheet_size"],
+                name="unique_shop_sheet_size_capability",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.shop.name} - {self.sheet_size}: max {self.max_gsm}gsm"

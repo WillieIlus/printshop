@@ -72,9 +72,10 @@ class PrintTemplateAdmin(SuperuserOrTestimonialAddMixin, admin.ModelAdmin):
     ]
     list_filter = ["category", "is_popular", "is_best_value", "is_new", "is_active"]
     search_fields = ["title", "category__name", "description"]
-    list_select_related = ["category"]
+    list_select_related = ["category", "created_by_shop"]
     list_editable = ["is_active"]
     prepopulated_fields = {"slug": ("title",)}
+    autocomplete_fields = ["created_by_shop"]
     inlines = [TemplateFinishingInline, TemplateOptionInline]
     ordering = ["category", "title"]
 
@@ -85,8 +86,20 @@ class PrintTemplateAdmin(SuperuserOrTestimonialAddMixin, admin.ModelAdmin):
         (_("Pricing"), {
             "fields": ("base_price", "min_quantity")
         }),
+        (_("Ownership"), {
+            "fields": ("created_by_shop",),
+            "classes": ("collapse",),
+        }),
         (_("Specifications"), {
-            "fields": ("final_width", "final_height", "default_gsm", "default_print_sides"),
+            "fields": (
+                "final_width",
+                "final_height",
+                "default_gsm",
+                "min_gsm",
+                "max_gsm",
+                "allowed_gsm_values",
+                "default_print_sides",
+            ),
             "description": "Product specifications for quote conversion"
         }),
         (_("Display"), {

@@ -156,6 +156,24 @@ class PrintTemplateModelTests(TestCase):
         badges = template.get_gallery_badges()
         self.assertEqual(badges, [])
     
+    def test_min_max_gsm_validation(self):
+        """Test model clean() validates min_gsm <= max_gsm."""
+        from django.core.exceptions import ValidationError
+
+        template = PrintTemplate(
+            title="Invalid GSM",
+            category=self.category,
+            base_price=Decimal("1000.00"),
+            min_gsm=350,
+            max_gsm=250,
+            dimensions_label="90 × 55 mm",
+            weight_label="300gsm",
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            template.full_clean()
+        msg = str(ctx.exception).lower()
+        self.assertTrue("min_gsm" in msg or "max_gsm" in msg)
+
     def test_product_specifications(self):
         """Test product specifications fields."""
         template = PrintTemplate.objects.create(
@@ -893,3 +911,220 @@ class TemplateCalculatePriceAPITests(APITestCase):
         response = self.client.post(url, {"quantity": 50}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Minimum quantity", response.data["error"])
+
+
+class TemplateGSMConstraintsTests(APITestCase):
+    """Tests for GSM constraint enforcement in calculate-price."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            email="gsm-test@example.com",
+            password="testpass123",
+        )
+        self.shop = Shop.objects.create(
+            owner=self.user,
+            name="Test Print Shop",
+            slug="test-print-shop",
+            business_email="shop@example.com",
+            address_line="123 Main St",
+            city="Nairobi",
+            zip_code="00100",
+            is_active=True,
+        )
+        self.category = TemplateCategory.objects.create(
+            name="Business Cards",
+            slug="business-cards",
+        )
+
+    def test_business_card_rejects_gsm_below_min(self):
+        """Business card template (250–350gsm) rejects gsm below min."""
+        template = PrintTemplate.objects.create(
+            title="Premium Business Cards",
+            slug="premium-business-cards-gsm",
+            category=self.category,
+            base_price=Decimal("1200.00"),
+            min_quantity=100,
+            min_gsm=250,
+            max_gsm=350,
+            dimensions_label="90 × 55 mm",
+            weight_label="350gsm",
+            is_active=True,
+        )
+        url = f"/api/templates/{template.slug}/calculate-price/"
+        response = self.client.post(
+            url,
+            {"quantity": 100, "gsm": 200},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("gsm", response.data)
+        self.assertIn("250", str(response.data["gsm"]))
+
+    def test_business_card_rejects_gsm_above_max(self):
+        """Business card template (250–350gsm) rejects gsm above max."""
+        template = PrintTemplate.objects.create(
+            title="Premium Business Cards",
+            slug="premium-business-cards-gsm2",
+            category=self.category,
+            base_price=Decimal("1200.00"),
+            min_quantity=100,
+            min_gsm=250,
+            max_gsm=350,
+            dimensions_label="90 × 55 mm",
+            weight_label="350gsm",
+            is_active=True,
+        )
+        url = f"/api/templates/{template.slug}/calculate-price/"
+        response = self.client.post(
+            url,
+            {"quantity": 100, "gsm": 400},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("gsm", response.data)
+        self.assertIn("350", str(response.data["gsm"]))
+
+    def test_flyer_rejects_gsm_above_max(self):
+        """Flyer template (max 200gsm) rejects gsm above max."""
+        template = PrintTemplate.objects.create(
+            title="A5 Flyers",
+            slug="a5-flyers-gsm",
+            category=self.category,
+            base_price=Decimal("500.00"),
+            min_quantity=100,
+            max_gsm=200,
+            dimensions_label="148 × 210 mm",
+            weight_label="170gsm",
+            is_active=True,
+        )
+        url = f"/api/templates/{template.slug}/calculate-price/"
+        response = self.client.post(
+            url,
+            {"quantity": 100, "gsm": 250},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("gsm", response.data)
+        self.assertIn("200", str(response.data["gsm"]))
+
+    def test_shop_max_300_rejects_350_even_if_template_allows(self):
+        """Shop with max 300gsm for A4 rejects 350gsm even when template allows it."""
+        from shops.models import ShopPaperCapability
+
+        template = PrintTemplate.objects.create(
+            title="Heavy Cards",
+            slug="heavy-cards",
+            category=self.category,
+            base_price=Decimal("1500.00"),
+            min_quantity=100,
+            min_gsm=250,
+            max_gsm=350,
+            created_by_shop=self.shop,
+            dimensions_label="90 × 55 mm",
+            weight_label="350gsm",
+            is_active=True,
+        )
+        ShopPaperCapability.objects.create(
+            shop=self.shop,
+            sheet_size="A4",
+            max_gsm=300,
+        )
+        url = f"/api/templates/{template.slug}/calculate-price/"
+        # Template allows 250-350, but shop max is 300 - 350 should be rejected
+        response = self.client.post(
+            url,
+            {"quantity": 100, "gsm": 350, "sheet_size": "A4"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("gsm", response.data)
+        self.assertIn("300", str(response.data["gsm"]))
+        self.assertIn("shop", str(response.data["gsm"]).lower())
+
+    def test_valid_gsm_within_template_and_shop_passes(self):
+        """Valid gsm within both template and shop constraints succeeds."""
+        from shops.models import ShopPaperCapability
+
+        template = PrintTemplate.objects.create(
+            title="Standard Cards",
+            slug="standard-cards-gsm",
+            category=self.category,
+            base_price=Decimal("1000.00"),
+            min_quantity=100,
+            min_gsm=250,
+            max_gsm=350,
+            created_by_shop=self.shop,
+            dimensions_label="90 × 55 mm",
+            weight_label="300gsm",
+            is_active=True,
+        )
+        ShopPaperCapability.objects.create(
+            shop=self.shop,
+            sheet_size="A4",
+            max_gsm=350,
+        )
+        url = f"/api/templates/{template.slug}/calculate-price/"
+        response = self.client.post(
+            url,
+            {"quantity": 100, "gsm": 300, "sheet_size": "A4"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("total", response.data)
+
+    def test_constraints_endpoint_returns_template_and_shop_capabilities(self):
+        """GET /api/templates/{slug}/constraints/ returns template and shop constraints."""
+        from shops.models import ShopPaperCapability
+
+        template = PrintTemplate.objects.create(
+            title="Constrained Cards",
+            slug="constrained-cards",
+            category=self.category,
+            base_price=Decimal("1000.00"),
+            min_quantity=100,
+            min_gsm=250,
+            max_gsm=350,
+            created_by_shop=self.shop,
+            dimensions_label="90 × 55 mm",
+            weight_label="300gsm",
+            is_active=True,
+        )
+        ShopPaperCapability.objects.create(
+            shop=self.shop,
+            sheet_size="A4",
+            max_gsm=300,
+        )
+        url = f"/api/templates/{template.slug}/constraints/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("template", response.data)
+        self.assertEqual(response.data["template"]["min_gsm"], 250)
+        self.assertEqual(response.data["template"]["max_gsm"], 350)
+        self.assertIn("shop_capabilities", response.data)
+        self.assertEqual(len(response.data["shop_capabilities"]), 1)
+        self.assertEqual(response.data["shop_capabilities"][0]["sheet_size"], "A4")
+        self.assertEqual(response.data["shop_capabilities"][0]["max_gsm"], 300)
+
+    def test_allowed_gsm_values_rejects_other_values(self):
+        """Template with allowed_gsm_values rejects gsm not in list."""
+        template = PrintTemplate.objects.create(
+            title="Specific GSM Cards",
+            slug="specific-gsm-cards",
+            category=self.category,
+            base_price=Decimal("1000.00"),
+            min_quantity=100,
+            allowed_gsm_values=[250, 300, 350],
+            dimensions_label="90 × 55 mm",
+            weight_label="300gsm",
+            is_active=True,
+        )
+        url = f"/api/templates/{template.slug}/calculate-price/"
+        response = self.client.post(
+            url,
+            {"quantity": 100, "gsm": 200},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("gsm", response.data)
+        self.assertIn("250", str(response.data["gsm"]))
