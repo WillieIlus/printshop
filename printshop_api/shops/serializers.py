@@ -315,6 +315,42 @@ class ShopMemberUpdateSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 
+class PublicShopSerializer(serializers.ModelSerializer):
+    """
+    Safe serializer for public gallery shops list.
+    Returns only: name, slug, logo (absolute URL), location summary, templates_count.
+    """
+    logo_url = serializers.SerializerMethodField()
+    location_summary = serializers.SerializerMethodField()
+    templates_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Shop
+        fields = ["name", "slug", "logo_url", "location_summary", "templates_count"]
+        read_only_fields = fields
+
+    def get_logo_url(self, obj) -> str | None:
+        if obj.logo:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.logo.url)
+            return obj.logo.url
+        return None
+
+    def get_location_summary(self, obj) -> str:
+        parts = [obj.city] if obj.city else []
+        if obj.state:
+            parts.append(obj.state)
+        if obj.country:
+            parts.append(obj.country)
+        return ", ".join(parts) if parts else ""
+
+    def get_templates_count(self, obj) -> int:
+        if hasattr(obj, "_templates_count"):
+            return obj._templates_count
+        return obj.print_templates.filter(is_active=True).count()
+
+
 class ShopListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for shop list views."""
     

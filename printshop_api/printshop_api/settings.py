@@ -87,7 +87,8 @@ AUTH_USER_MODEL = "accounts.User"
 SITE_ID = 1
 
 REST_FRAMEWORK = {
-    # Dual auth: Session for browsable API / admin testing, JWT for frontend
+    # Dual auth: Session first for browsable API (/api-auth/login/), JWT for frontend
+    # SessionAuth allows devs to log in via DRF login and browse API without Bearer token
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",

@@ -643,8 +643,30 @@ class ShopTemplateEmptyStateAPITests(APITestCase):
             self.assertIn("templates_count", cat)
             self.assertEqual(cat["templates_count"], 0)
 
+    def test_shop_categories_public_without_auth(self):
+        """Categories return even when no templates, without authentication."""
+        url = f"/api/shops/{self.shop.slug}/template-categories/"
+        response = self.client.get(url)  # No force_authenticate
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        results = data.get("results", data) if isinstance(data, dict) else data
+        self.assertEqual(len(results), 2)
+        for cat in results:
+            self.assertIn("templates_count", cat)
+            self.assertEqual(cat["templates_count"], 0)
+
     def test_shop_templates_list_returns_empty_array_when_no_templates(self):
         """Shop templates list returns HTTP 200 with [] when no templates exist."""
+        url = f"/api/shops/{self.shop.slug}/templates/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        results = data.get("results", data) if isinstance(data, dict) else data
+        self.assertEqual(results, [])
+
+    def test_shop_templates_list_empty_without_auth(self):
+        """Templates list returns [] (200) when empty, without authentication."""
+        self.client.force_authenticate(user=None)  # Ensure no auth
         url = f"/api/shops/{self.shop.slug}/templates/"
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1024,3 +1046,67 @@ class TemplateCalculatePriceAPITests(APITestCase):
         self.assertIsNone(response.data["ups_per_sheet"])
         self.assertIsNone(response.data["sheets_needed"])
         self.assertEqual(response.data["calculation_steps"], [])
+
+
+class ShopScopedCalculatePriceAPITests(APITestCase):
+    """API tests for POST /api/shops/{slug}/templates/{slug}/calculate-price/ (public)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com",
+            password="testpass123",
+        )
+        self.shop = Shop.objects.create(
+            owner=self.user,
+            name="Calc Shop",
+            slug="calc-shop",
+            business_email="calc@example.com",
+            is_active=True,
+        )
+        self.category = TemplateCategory.objects.create(
+            name="Business Cards",
+            slug="business-cards",
+            shop=self.shop,
+            is_active=True,
+        )
+        self.template = PrintTemplate.objects.create(
+            title="Premium Cards",
+            slug="premium-cards",
+            shop=self.shop,
+            category=self.category,
+            base_price=Decimal("1200.00"),
+            min_quantity=100,
+            default_gsm=300,
+            min_gsm=130,
+            max_gsm=400,
+            dimensions_label="90 × 55 mm",
+            weight_label="300gsm",
+            is_active=True,
+        )
+        self.client = APIClient()
+
+    def test_calculate_rejects_quantity_below_min(self):
+        """Calculate rejects quantity below min_quantity."""
+        url = f"/api/shops/{self.shop.slug}/templates/{self.template.slug}/calculate-price/"
+        response = self.client.post(url, {"quantity": 50}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Minimum quantity", response.data["error"])
+
+    def test_calculate_returns_imposition_fields(self):
+        """Calculate returns imposition fields when template has ups_per_sheet."""
+        self.template.ups_per_sheet = 25
+        self.template.save()
+        url = f"/api/shops/{self.shop.slug}/templates/{self.template.slug}/calculate-price/"
+        response = self.client.post(url, {"quantity": 500}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["ups_per_sheet"], 25)
+        self.assertEqual(response.data["sheets_needed"], 20)
+        self.assertIn("calculation_steps", response.data)
+
+    def test_calculate_public_without_auth(self):
+        """Calculate-price works without authentication (AllowAny)."""
+        url = f"/api/shops/{self.shop.slug}/templates/{self.template.slug}/calculate-price/"
+        response = self.client.post(url, {"quantity": 100}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("total", response.data)
+        self.assertIn("printing", response.data)

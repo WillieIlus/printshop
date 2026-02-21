@@ -21,6 +21,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     NearbyShopsView,
     OpeningHoursViewSet,
+    PublicShopsView,
     ShopClaimAdminUpdateView,
     ShopClaimVerifyView,
     ShopClaimViewSet,
@@ -43,6 +44,8 @@ router.register(r"shops", ShopViewSet, basename="shop")
 router.register(r"claims", ShopClaimViewSet, basename="claim")
 
 urlpatterns = [
+    # Public gallery: shops list (must be before router to avoid slug conflict)
+    path("shops/public/", PublicShopsView.as_view(), name="shops-public"),
     # Main router URLs
     path("", include(router.urls)),
     
