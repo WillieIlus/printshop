@@ -21,10 +21,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-zn%=rezxu0ky1bf6@jr!!s)se=!me5^evur%aco3hyndpw8)gz'
+SECRET_KEY = os.environ.get(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-zn%=rezxu0ky1bf6@jr!!s)se=!me5^evur%aco3hyndpw8)gz",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() in ("true", "1", "yes")
+# Default False for production; set DJANGO_DEBUG=true for local development
+DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() in ("true", "1", "yes")
 
 ALLOWED_HOSTS = [
     "localhost",
@@ -32,6 +36,7 @@ ALLOWED_HOSTS = [
     "printy.ke",
     "www.printy.ke",
     "willieilus.pythonanywhere.com",
+    "amazingace00.pythonanywhere.com",
     ".pythonanywhere.com",
 ]
 
@@ -214,6 +219,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://printy.ke",
     "https://www.printy.ke",
     "https://willieilus.pythonanywhere.com",
+    "https://amazingace00.pythonanywhere.com",
 ]
 
 MIDDLEWARE = [
@@ -240,6 +246,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://printy.ke",
     "https://www.printy.ke",
     "https://willieilus.pythonanywhere.com",
+    "https://amazingace00.pythonanywhere.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -349,6 +356,7 @@ USE_TZ = True
 # settings.py
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = 'media/'  # Make sure this is NOT just '/' or empty
 MEDIA_ROOT = BASE_DIR / 'media'
 
