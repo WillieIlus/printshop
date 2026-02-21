@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from math import cos, radians  # Move this import to the top
 
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import generics, permissions, status, viewsets
@@ -32,6 +32,7 @@ from .serializers import (
     OpeningHoursBulkSerializer,
     OpeningHoursCreateSerializer,
     OpeningHoursSerializer,
+    PublicShopSerializer,
     ShopClaimAdminUpdateSerializer,
     ShopClaimCreateSerializer,
     ShopClaimDetailSerializer,
@@ -176,6 +177,33 @@ class ShopViewSet(viewsets.ModelViewSet):
         """Soft delete by deactivating."""
         instance.is_active = False
         instance.save(update_fields=["is_active"])
+
+
+# =============================================================================
+# Public Gallery - Shops List
+# =============================================================================
+
+
+class PublicShopsView(generics.ListAPIView):
+    """
+    GET /api/shops/public/
+
+    Public list of active shops (printers) for gallery landing page.
+    Returns safe fields only: name, slug, logo (absolute URL), location summary, templates_count.
+    AllowAny.
+    """
+    serializer_class = PublicShopSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        return Shop.objects.filter(
+            is_active=True
+        ).annotate(
+            _templates_count=Count(
+                "print_templates",
+                filter=Q(print_templates__is_active=True),
+            )
+        ).order_by("name")
 
 
 # =============================================================================

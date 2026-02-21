@@ -92,7 +92,8 @@ class PrintTemplateAdmin(SuperuserOrTestimonialAddMixin, admin.ModelAdmin):
             "fields": ("shop", "title", "slug", "category", "description")
         }),
         (_("Pricing"), {
-            "fields": ("base_price", "min_quantity", "min_gsm", "max_gsm")
+            "fields": ("base_price", "min_quantity", "min_gsm", "max_gsm"),
+            "description": _("base_price is starting price for display"),
         }),
         (_("Specifications"), {
             "fields": ("final_width", "final_height", "default_gsm", "default_print_sides"),

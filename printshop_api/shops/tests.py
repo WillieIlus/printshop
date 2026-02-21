@@ -884,6 +884,67 @@ class OpeningHoursAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
+class PublicShopsGalleryAPITests(APITestCase):
+    """Tests for GET /api/shops/public/ - public shops list for gallery."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            email="owner@example.com",
+            password="testpass123"
+        )
+        self.shop = Shop.objects.create(
+            owner=self.owner,
+            name="Gallery Shop",
+            slug="gallery-shop",
+            business_email="gallery@example.com",
+            address_line="123 Main St",
+            city="Nairobi",
+            zip_code="00100",
+            is_active=True,
+        )
+        self.inactive_shop = Shop.objects.create(
+            owner=self.owner,
+            name="Inactive Gallery Shop",
+            slug="inactive-gallery-shop",
+            business_email="inactive@example.com",
+            address_line="456 Other St",
+            city="Mombasa",
+            zip_code="80100",
+            is_active=False,
+        )
+        self.client = APIClient()
+
+    def test_public_shops_list_returns_200(self):
+        """GET /api/shops/public/ returns 200 (AllowAny)."""
+        url = "/api/shops/public/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_public_shops_list_returns_active_shops_only(self):
+        """Public shops list excludes inactive shops."""
+        url = "/api/shops/public/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        slugs = [s["slug"] for s in data]
+        self.assertIn("gallery-shop", slugs)
+        self.assertNotIn("inactive-gallery-shop", slugs)
+
+    def test_public_shops_list_has_safe_fields(self):
+        """Public shops list returns only safe fields (name, slug, logo_url, etc)."""
+        url = "/api/shops/public/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        if data:
+            item = data[0]
+            self.assertIn("name", item)
+            self.assertIn("slug", item)
+            self.assertIn("logo_url", item)
+            self.assertIn("location_summary", item)
+            self.assertIn("templates_count", item)
+
+
 class ShopPricingPublicAPITests(APITestCase):
     """Test public rate-card and calculate-price endpoints (production critical)."""
 

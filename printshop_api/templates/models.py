@@ -178,6 +178,7 @@ class PrintTemplate(TimeStampedModel):
     preview_image = models.ImageField(
         _("preview image"),
         upload_to="templates/previews/",
+        null=True,
         blank=True,
     )
     dimensions_label = models.CharField(

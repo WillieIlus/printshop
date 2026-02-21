@@ -52,6 +52,15 @@ class Shop(TimeStampedModel):
         blank=True
     )
 
+    # Branding
+    logo = models.ImageField(
+        _("logo"),
+        upload_to="shops/logos/",
+        null=True,
+        blank=True,
+        help_text=_("Shop logo for gallery display."),
+    )
+
     # Status Flags
     is_verified = models.BooleanField(
         _("verified"), 

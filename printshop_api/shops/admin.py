@@ -218,10 +218,13 @@ class ShopAdmin(admin.ModelAdmin):
         )
 
     @admin.display(description=_("Templates"))
-    def template_count(self, obj: Shop) -> int:
-        if hasattr(obj, "_template_count"):
-            return obj._template_count
-        return obj.print_templates.count()
+    def template_count(self, obj: Shop) -> str:
+        count = obj._template_count if hasattr(obj, "_template_count") else obj.print_templates.count()
+        return format_html(
+            '<a href="/admin/templates/printtemplate/?shop__id__exact={}">{}</a>',
+            obj.pk,
+            count,
+        )
     
     @admin.display(description=_("Google Maps"))
     def google_maps_link(self, obj: Shop) -> str:
