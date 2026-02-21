@@ -558,6 +558,100 @@ class TemplateGalleryAPITests(APITestCase):
         self.assertIsNotNone(cards_cat)
         self.assertEqual(len(cards_cat["templates"]), 2)
 
+    def test_gallery_returns_categories_with_no_templates(self):
+        """Test gallery returns categories even when they have 0 templates."""
+        # Create a category with no templates
+        TemplateCategory.objects.create(
+            name="Brochures",
+            slug="brochures",
+            display_order=3,
+            is_active=True,
+        )
+        url = "/api/templates/gallery/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        categories = response.data["categories"]
+        brochures_cat = next(
+            (c for c in categories if c.get("category", {}).get("slug") == "brochures"),
+            None
+        )
+        self.assertIsNotNone(brochures_cat)
+        self.assertEqual(brochures_cat["templates"], [])
+        self.assertEqual(brochures_cat["category"]["templates_count"], 0)
+
+
+class TemplateEmptyStateAPITests(APITestCase):
+    """API tests for empty template/category states."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_templates_list_returns_empty_array_when_no_templates(self):
+        """Test templates list returns HTTP 200 with [] when no templates exist."""
+        url = "/api/templates/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        results = data.get("results", data) if isinstance(data, dict) else data
+        self.assertEqual(results, [])
+
+
+class ShopTemplateEmptyStateAPITests(APITestCase):
+    """API tests for shop-scoped templates with categories but no templates."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com",
+            password="testpass123",
+        )
+        self.shop = Shop.objects.create(
+            owner=self.user,
+            name="Empty Templates Shop",
+            slug="empty-templates-shop",
+            business_email="shop@example.com",
+            is_active=True,
+            is_verified=True,
+        )
+        self.cat_flyers = TemplateCategory.objects.create(
+            name="Flyers",
+            slug="flyers",
+            shop=self.shop,
+            display_order=1,
+            is_active=True,
+        )
+        self.cat_cards = TemplateCategory.objects.create(
+            name="Business Cards",
+            slug="business-cards",
+            shop=self.shop,
+            display_order=2,
+            is_active=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_shop_categories_returned_when_no_templates(self):
+        """Shop with categories but no templates returns categories properly."""
+        url = f"/api/shops/{self.shop.slug}/templates/categories/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        results = data.get("results", data) if isinstance(data, dict) else data
+        slugs = [c["slug"] for c in results]
+        self.assertIn("flyers", slugs)
+        self.assertIn("business-cards", slugs)
+        for cat in results:
+            self.assertIn("templates_count", cat)
+            self.assertEqual(cat["templates_count"], 0)
+
+    def test_shop_templates_list_returns_empty_array_when_no_templates(self):
+        """Shop templates list returns HTTP 200 with [] when no templates exist."""
+        url = f"/api/shops/{self.shop.slug}/templates/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        results = data.get("results", data) if isinstance(data, dict) else data
+        self.assertEqual(results, [])
+
 
 class TemplateQuoteRequestAPITests(APITestCase):
     """API tests for template-to-quote conversion."""
