@@ -1,5 +1,24 @@
-# Python
+# Python venv
+.venv/
+venv/
+env/
+
+# Python cache
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Django / local
+*.sqlite3
+.env
+.env.*
+.DS_Store
+
+# Logs
+*.log
+
+# Python build/dist
 *.py[cod]
 *$py.class
 *.so
@@ -20,25 +39,14 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-.venv/
-venv/
-ENV/
-env/
-
 # Django
-*.log
 local_settings.py
-db.sqlite3
 db.sqlite3-journal
 *.pot
-*.pyc
 
-# Static files
+# Static / media
 staticfiles/
 static/
-
-# Media files
 media/
 
 # IDE
@@ -47,15 +55,6 @@ media/
 *.swp
 *.swo
 *~
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# OS
-.DS_Store
-Thumbs.db
 
 # Coverage
 htmlcov/
@@ -69,10 +68,10 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Jupyter Notebook
+# Jupyter
 .ipynb_checkpoints
 
-# celery
+# Celery
 celerybeat-schedule
 celerybeat.pid
 
