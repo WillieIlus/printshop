@@ -257,10 +257,12 @@ class TemplateGalleryView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        # Get active categories with templates
+        # Get active categories (always return all, even if no templates)
         categories = TemplateCategory.objects.filter(
             is_active=True
-        ).prefetch_related("print_templates")
+        ).filter(
+            Q(shop__isnull=True) | Q(shop__is_active=True)
+        ).prefetch_related("print_templates").order_by("display_order", "name")
         
         # Get featured templates
         featured = PrintTemplate.objects.filter(
@@ -269,15 +271,14 @@ class TemplateGalleryView(APIView):
             is_popular=True
         )[:6]
         
-        # Build response
+        # Build response: include ALL categories with templates array (empty when none)
         category_data = []
         for cat in categories:
             templates = cat.print_templates.filter(is_active=True)[:8]
-            if templates.exists():
-                category_data.append({
-                    "category": TemplateCategorySerializer(cat).data,
-                    "templates": PrintTemplateListSerializer(templates, many=True).data,
-                })
+            category_data.append({
+                "category": TemplateCategorySerializer(cat).data,
+                "templates": PrintTemplateListSerializer(templates, many=True).data,
+            })
         
         return Response({
             "featured": PrintTemplateListSerializer(featured, many=True).data,

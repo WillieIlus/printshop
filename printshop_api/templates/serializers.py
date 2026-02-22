@@ -20,6 +20,7 @@ from .models import (
 class ShopTemplateCategorySerializer(serializers.ModelSerializer):
     """Serializer for shop-scoped template category CRUD."""
     template_count = serializers.SerializerMethodField()
+    templates_count = serializers.SerializerMethodField()
 
     class Meta:
         model = TemplateCategory
@@ -32,12 +33,16 @@ class ShopTemplateCategorySerializer(serializers.ModelSerializer):
             "display_order",
             "is_active",
             "template_count",
+            "templates_count",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at", "template_count"]
+        read_only_fields = ["id", "created_at", "updated_at", "template_count", "templates_count"]
 
     def get_template_count(self, obj):
+        return obj.print_templates.filter(is_active=True).count()
+
+    def get_templates_count(self, obj):
         return obj.print_templates.filter(is_active=True).count()
 
     def validate_slug(self, value):
@@ -158,6 +163,7 @@ class TemplateCategorySerializer(serializers.ModelSerializer):
     """Serializer for template categories."""
     
     template_count = serializers.SerializerMethodField()
+    templates_count = serializers.SerializerMethodField()
 
     class Meta:
         model = TemplateCategory
@@ -170,9 +176,13 @@ class TemplateCategorySerializer(serializers.ModelSerializer):
             "display_order",
             "is_active",
             "template_count",
+            "templates_count",
         ]
 
     def get_template_count(self, obj):
+        return obj.print_templates.filter(is_active=True).count()
+
+    def get_templates_count(self, obj):
         return obj.print_templates.filter(is_active=True).count()
 
 
