@@ -31,6 +31,7 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
     "printy.ke",
     "www.printy.ke",
+    "amazingace00.pythonanywhere.com",
     "willieilus.pythonanywhere.com",
     ".pythonanywhere.com",
 ]
@@ -204,15 +205,16 @@ EMAIL_CONFIRMATION_URL = f"{FRONTEND_URL}/auth/confirm-email"
 PASSWORD_RESET_URL = f"{FRONTEND_URL}/auth/reset-password"
 
 # CSRF trusted origins (for cookie-based flows, admin, form submissions)
-# Local: frontend localhost:3000 -> backend localhost:8000
-# Prod: frontend printy.ke -> backend willieilus.pythonanywhere.com
+# Must include scheme (http/https)
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
+    "https://printyke.netlify.app",
     "https://printy.ke",
     "https://www.printy.ke",
+    "https://amazingace00.pythonanywhere.com",
     "https://willieilus.pythonanywhere.com",
 ]
 
@@ -233,15 +235,15 @@ MIDDLEWARE = [
 # =============================================================================
 
 CORS_ALLOWED_ORIGINS = [
-    # Local development
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    # Production: frontend at printy.ke, backend at pythonanywhere
+    "https://printyke.netlify.app",
     "https://printy.ke",
     "https://www.printy.ke",
-    "https://willieilus.pythonanywhere.com",
 ]
 
+# JWT in Authorization header: credentials not required for API.
+# Set True if frontend sends cookies (e.g. session, httpOnly token).
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_HEADERS = [
@@ -258,6 +260,15 @@ CORS_ALLOW_HEADERS = [
 
 # Expose Authorization so frontend can read token from response if needed
 CORS_EXPOSE_HEADERS = ["authorization", "content-type"]
+
+# Cookie settings for cross-origin auth (required when CORS_ALLOW_CREDENTIALS = True)
+# Frontend (printy.ke, printyke.netlify.app) and backend (pythonanywhere) are different origins
+# Only apply in production (HTTPS); local dev over HTTP would fail with Secure=True
+if not DEBUG:
+    SESSION_COOKIE_SAMESITE = "None"
+    CSRF_COOKIE_SAMESITE = "None"
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 # settings.py additions
 
