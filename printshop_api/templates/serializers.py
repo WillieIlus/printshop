@@ -155,7 +155,88 @@ class ShopPrintTemplateCreateUpdateSerializer(serializers.ModelSerializer):
 
 
 # =============================================================================
-# Public gallery serializers
+# Public gallery serializers (shop-scoped)
+# =============================================================================
+
+
+class ShopSummarySerializer(serializers.Serializer):
+    """Minimal shop info for template responses."""
+    name = serializers.CharField()
+    slug = serializers.CharField()
+
+
+class PublicShopTemplateCategorySerializer(serializers.ModelSerializer):
+    """Serializer for public shop template categories with templates_count."""
+    templates_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TemplateCategory
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "description",
+            "icon_svg_path",
+            "display_order",
+            "templates_count",
+        ]
+
+    def get_templates_count(self, obj):
+        return obj.print_templates.filter(is_active=True).count()
+
+
+class PublicShopTemplateListSerializer(serializers.ModelSerializer):
+    """Public gallery template list with shop summary, absolute preview URL, constraints."""
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    category_slug = serializers.CharField(source="category.slug", read_only=True)
+    badges = serializers.SerializerMethodField()
+    starting_price = serializers.CharField(source="get_starting_price_display", read_only=True)
+    preview_image_url = serializers.SerializerMethodField()
+    constraints = serializers.SerializerMethodField()
+    shop = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PrintTemplate
+        fields = [
+            "id",
+            "title",
+            "slug",
+            "category_name",
+            "category_slug",
+            "preview_image_url",
+            "min_quantity",
+            "constraints",
+            "base_price",
+            "starting_price",
+            "badges",
+            "shop",
+        ]
+
+    def get_badges(self, obj):
+        return obj.get_gallery_badges()
+
+    def get_preview_image_url(self, obj):
+        if obj.preview_image:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.preview_image.url)
+            return obj.preview_image.url
+        return None
+
+    def get_constraints(self, obj):
+        return {
+            "min_gsm": obj.min_gsm,
+            "max_gsm": obj.max_gsm,
+        }
+
+    def get_shop(self, obj):
+        if obj.shop:
+            return ShopSummarySerializer(obj.shop).data
+        return None
+
+
+# =============================================================================
+# Public gallery serializers (legacy /api/templates/)
 # =============================================================================
 
 
@@ -222,6 +303,68 @@ class TemplateOptionSerializer(serializers.ModelSerializer):
             "is_default",
             "display_order",
         ]
+
+
+class PublicShopTemplateDetailSerializer(serializers.ModelSerializer):
+    """Public gallery template detail with full constraints, options, finishings, shop."""
+    category = PublicShopTemplateCategorySerializer(read_only=True)
+    finishing_options = TemplateFinishingSerializer(many=True, read_only=True)
+    options = TemplateOptionSerializer(many=True, read_only=True)
+    badges = serializers.SerializerMethodField()
+    starting_price = serializers.CharField(source="get_starting_price_display", read_only=True)
+    preview_image_url = serializers.SerializerMethodField()
+    constraints = serializers.SerializerMethodField()
+    shop = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PrintTemplate
+        fields = [
+            "id",
+            "title",
+            "slug",
+            "description",
+            "category",
+            "preview_image_url",
+            "constraints",
+            "base_price",
+            "starting_price",
+            "min_quantity",
+            "finishing_options",
+            "options",
+            "badges",
+            "shop",
+            "dimensions_label",
+            "weight_label",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_badges(self, obj):
+        return obj.get_gallery_badges()
+
+    def get_preview_image_url(self, obj):
+        if obj.preview_image:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.preview_image.url)
+            return obj.preview_image.url
+        return None
+
+    def get_constraints(self, obj):
+        result = {
+            "min_gsm": obj.min_gsm,
+            "max_gsm": obj.max_gsm,
+        }
+        # allowed_gsm_values if we have TemplateOption with PAPER_GSM
+        gsm_options = obj.options.filter(option_type="PAPER_GSM").order_by("display_order")
+        if gsm_options.exists():
+            result["allowed_gsm_values"] = [int(opt.value) for opt in gsm_options if opt.value.isdigit()]
+        return result
+
+    def get_shop(self, obj):
+        if obj.shop:
+            return ShopSummarySerializer(obj.shop).data
+        return None
 
 
 class PrintTemplateListSerializer(serializers.ModelSerializer):
