@@ -143,14 +143,14 @@ class ShopViewSet(viewsets.ModelViewSet):
     def setup_status(self, request: Request, slug: str = None) -> Response:
         """Return onboarding checklist status for the shop."""
         shop = self.get_object()
-        from inventory.models import Machine
-        from pricing.models import PrintingPrice, PaperPrice, MaterialPrice
+        from inventory.models import Machine, Paper
+        from pricing.models import PrintingPrice, MaterialPrice
         from templates.models import PrintTemplate
 
         return Response({
             "has_machines": Machine.objects.filter(shop=shop).exists(),
             "has_printing_prices": PrintingPrice.objects.filter(shop=shop, is_active=True).exists(),
-            "has_paper_prices": PaperPrice.objects.filter(shop=shop, is_active=True).exists(),
+            "has_paper_prices": Paper.objects.filter(shop=shop, is_active=True).exists(),
             "has_material_prices": MaterialPrice.objects.filter(shop=shop, is_active=True).exists(),
             "has_templates": PrintTemplate.objects.filter(shop=shop, is_active=True).exists(),
         })

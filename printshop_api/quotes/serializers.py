@@ -23,6 +23,7 @@ class ProductTemplateSerializer(serializers.ModelSerializer):
         model = ProductTemplate
         fields = [
             "id",
+            "template",
             "name",
             "description",
             "defaults",
@@ -52,8 +53,8 @@ class ProductTemplateListSerializer(serializers.ModelSerializer):
 class QuoteItemPartSerializer(serializers.ModelSerializer):
     """Serializer for quote item parts."""
     
-    material_name = serializers.CharField(source="material.name", read_only=True)
-    machine_name = serializers.CharField(source="machine.name", read_only=True)
+    paper_display = serializers.CharField(source="paper.display_name", read_only=True, allow_null=True)
+    machine_name = serializers.CharField(source="machine.name", read_only=True, allow_null=True)
     print_sides_display = serializers.CharField(
         source="get_print_sides_display", 
         read_only=True
@@ -66,9 +67,8 @@ class QuoteItemPartSerializer(serializers.ModelSerializer):
             "name",
             "final_width",
             "final_height",
-            "material",
-            "material_name",
-            "preferred_stock",
+            "paper",
+            "paper_display",
             "machine",
             "machine_name",
             "print_sides",
@@ -95,11 +95,11 @@ class QuoteItemFinishingSerializer(serializers.ModelSerializer):
     """Serializer for quote item finishing."""
     
     finishing_name = serializers.CharField(
-        source="finishing_price.process_name", 
+        source="finishing_service.name", 
         read_only=True
     )
     unit_price = serializers.DecimalField(
-        source="finishing_price.price",
+        source="finishing_service.selling_price",
         max_digits=10,
         decimal_places=2,
         read_only=True
@@ -109,7 +109,7 @@ class QuoteItemFinishingSerializer(serializers.ModelSerializer):
         model = QuoteItemFinishing
         fields = [
             "id",
-            "finishing_price",
+            "finishing_service",
             "finishing_name",
             "unit_price",
             "calculated_cost",

@@ -17,9 +17,10 @@ from rest_framework.views import APIView
 from shops.models import Shop
 from shops.permissions import IsShopOwner
 
+from inventory.models import Paper
+
 from .models import (
     PrintingPrice,
-    PaperPrice,
     MaterialPrice,
     FinishingService,
     VolumeDiscount,
@@ -31,7 +32,6 @@ from .models import (
 )
 from .serializers import (
     PrintingPriceSerializer,
-    PaperPriceSerializer,
     MaterialPriceSerializer,
     FinishingServiceSerializer,
     VolumeDiscountSerializer,
@@ -88,19 +88,6 @@ class PrintingPriceViewSet(ShopPricingMixin, viewsets.ModelViewSet):
     
     queryset = PrintingPrice.objects.all()
     serializer_class = PrintingPriceSerializer
-    permission_classes = [IsAuthenticated, IsShopOwner]
-
-
-class PaperPriceViewSet(ShopPricingMixin, viewsets.ModelViewSet):
-    """
-    Manage paper prices (GSM rate card) for a shop.
-    
-    GET /api/shops/{slug}/pricing/paper/ - List paper prices
-    POST /api/shops/{slug}/pricing/paper/ - Create paper price
-    """
-    
-    queryset = PaperPrice.objects.all()
-    serializer_class = PaperPriceSerializer
     permission_classes = [IsAuthenticated, IsShopOwner]
 
 
@@ -207,7 +194,7 @@ class PricingStatusView(APIView):
             return Response({"error": "Shop not found"}, status=status.HTTP_404_NOT_FOUND)
 
         printing = PrintingPrice.objects.filter(shop=shop)
-        paper = PaperPrice.objects.filter(shop=shop)
+        paper = Paper.objects.filter(shop=shop)
         material = MaterialPrice.objects.filter(shop=shop)
         finishing = FinishingService.objects.filter(shop=shop)
 
@@ -259,10 +246,12 @@ class RateCardView(APIView):
             for p in printing
         ]
         
-        # Get paper prices  
-        paper = PaperPrice.objects.filter(shop=shop, is_active=True)
+        # Get paper (from inventory)
+        paper = Paper.objects.filter(shop=shop, is_active=True)
         paper_data = [
             {
+                "id": p.id,
+                "sheet_size": p.sheet_size,
                 "gsm": p.gsm,
                 "paper_type": p.get_paper_type_display(),
                 "price_per_sheet": p.selling_price

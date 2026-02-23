@@ -6,7 +6,6 @@ Serializers for simplified pricing models.
 from rest_framework import serializers
 from .models import (
     PrintingPrice,
-    PaperPrice,
     MaterialPrice,
     FinishingService,
     VolumeDiscount,
@@ -42,26 +41,6 @@ class PrintingPriceSerializer(serializers.ModelSerializer):
         if shop and value.shop_id != shop.pk:
             raise serializers.ValidationError("Machine must belong to this shop.")
         return value
-
-
-class PaperPriceSerializer(serializers.ModelSerializer):
-    """Paper prices by GSM."""
-    
-    profit = serializers.DecimalField(
-        max_digits=10, decimal_places=2, read_only=True
-    )
-    margin_percent = serializers.DecimalField(
-        max_digits=5, decimal_places=2, read_only=True
-    )
-    
-    class Meta:
-        model = PaperPrice
-        fields = [
-            "id", "sheet_size", "gsm", "paper_type",
-            "buying_price", "selling_price",
-            "profit", "margin_percent", "is_active", "is_default_seeded", "needs_review"
-        ]
-        read_only_fields = ["id", "profit", "margin_percent"]
 
 
 class MaterialPriceSerializer(serializers.ModelSerializer):
@@ -156,6 +135,8 @@ class PublicPrintingRateSerializer(serializers.Serializer):
 class PublicPaperRateSerializer(serializers.Serializer):
     """Public paper rate for customers."""
     
+    id = serializers.IntegerField(required=False)
+    sheet_size = serializers.CharField(required=False)
     gsm = serializers.IntegerField()
     paper_type = serializers.CharField()
     price_per_sheet = serializers.DecimalField(max_digits=10, decimal_places=2)

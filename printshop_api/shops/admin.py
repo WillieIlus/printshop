@@ -17,7 +17,8 @@ from django.http import HttpRequest
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from inventory.models import Machine
+from inventory.models import Machine, Paper
+from pricing.models import FinishingService, MaterialPrice
 
 from .models import OpeningHours, Shop, ShopClaim, ShopMember, ShopSocialLink
 
@@ -80,6 +81,33 @@ class MachineInline(admin.TabularInline):
     readonly_fields = ["created_at"]
     ordering = ["name"]
     show_change_link = True
+
+
+class PaperInline(admin.TabularInline):
+    """Inline admin for paper (buy/sell + optional stock) within Shop admin."""
+    
+    model = Paper
+    extra = 0
+    fields = ["sheet_size", "gsm", "paper_type", "buying_price", "selling_price", "quantity_in_stock", "is_active"]
+    ordering = ["sheet_size", "gsm"]
+
+
+class FinishingServiceInline(admin.TabularInline):
+    """Inline admin for finishing services within Shop admin."""
+    
+    model = FinishingService
+    extra = 0
+    fields = ["name", "category", "charge_by", "selling_price", "buying_price", "is_default", "is_active"]
+    ordering = ["category", "name"]
+
+
+class MaterialPriceInline(admin.TabularInline):
+    """Inline admin for large-format material prices within Shop admin."""
+    
+    model = MaterialPrice
+    extra = 0
+    fields = ["material_type", "unit", "selling_price", "buying_price", "is_active"]
+    ordering = ["material_type", "unit"]
 
 
 # =============================================================================
@@ -167,6 +195,9 @@ class ShopAdmin(admin.ModelAdmin):
     
     inlines = [
         MachineInline,
+        PaperInline,
+        FinishingServiceInline,
+        MaterialPriceInline,
         ShopMemberInline,
         OpeningHoursInline,
         ShopSocialLinkInline,
@@ -214,7 +245,7 @@ class ShopAdmin(admin.ModelAdmin):
     @admin.display(description=_("Pricing"))
     def pricing_count(self, obj: Shop) -> str:
         return str(
-            obj.printing_prices.count() + obj.paper_prices.count() + obj.material_prices.count()
+            obj.printing_prices.count() + obj.papers.count() + obj.material_prices.count()
         )
 
     @admin.display(description=_("Templates"))

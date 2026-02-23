@@ -11,23 +11,28 @@ from django.utils import timezone
 
 from common.models import TimeStampedModel
 from shops.models import Shop
-from inventory.models import Machine, PaperStock
+from inventory.models import Machine, Paper
 from pricing.models import FinishingService
 
 
 class ProductTemplate(TimeStampedModel):
     """
     Quick quote presets defined by the shop owner.
-    
-    Examples:
-    - Standard Business Card (85×55mm, 300gsm, duplex)
-    - A5 Flyer (148×210mm, 150gsm, simplex)
+    References PrintTemplate for dimensions/options; defaults JSON overrides.
     """
     
     shop = models.ForeignKey(
         Shop, 
         on_delete=models.CASCADE, 
         related_name="product_templates"
+    )
+    template = models.ForeignKey(
+        "templates.PrintTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="product_presets",
+        help_text=_("PrintTemplate for dimensions/options. Null = use defaults only.")
     )
     name = models.CharField(
         _("template name"),
@@ -265,21 +270,14 @@ class QuoteItemPart(TimeStampedModel):
         decimal_places=2
     )
 
-    # Paper selection
-    paper_stock = models.ForeignKey(
-        PaperStock, 
+    # Paper selection (direct FK - no attribute lookup)
+    paper = models.ForeignKey(
+        Paper, 
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        help_text=_("Paper to use from stock")
-    )
-    
-    # Alternative: specify paper directly (for simpler use)
-    paper_gsm = models.PositiveIntegerField(
-        _("paper GSM"),
-        null=True,
-        blank=True,
-        help_text=_("Paper weight if not using stock")
+        related_name="quote_item_parts",
+        help_text=_("Paper to use (dimensions + price from this record)")
     )
     
     # Machine and printing

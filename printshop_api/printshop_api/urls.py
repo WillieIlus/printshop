@@ -56,6 +56,8 @@ urlpatterns = [
     path("api-auth/", include("rest_framework.urls")), 
 ]
 
+# Serve static files (admin CSS, etc.) - required when DEBUG=False
+urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 # Serve media files in development
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

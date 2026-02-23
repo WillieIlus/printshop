@@ -125,102 +125,8 @@ class PrintingPrice(TimeStampedModel):
 
 
 # =============================================================================
-# PAPER PRICES - What you charge for paper by GSM
+# PAPER: Use inventory.Paper (unified model with buy/sell + optional stock)
 # =============================================================================
-
-class PaperPrice(TimeStampedModel):
-    """
-    Simple paper pricing by weight (GSM).
-    
-    Example rate card:
-    - 130 GSM: Buy KES 6, Sell KES 10
-    - 150 GSM: Buy KES 9, Sell KES 15
-    - 200 GSM: Buy KES 12, Sell KES 20
-    - 300 GSM: Buy KES 18, Sell KES 30
-    
-    Total = Printing Price + Paper Price
-    """
-    
-    class SheetSize(models.TextChoices):
-        A5 = "A5", _("A5")
-        A4 = "A4", _("A4")
-        A3 = "A3", _("A3")
-        SRA3 = "SRA3", _("SRA3")
-    
-    class PaperType(models.TextChoices):
-        GLOSS = "GLOSS", _("Gloss")
-        MATTE = "MATTE", _("Matte")
-        BOND = "BOND", _("Bond")
-        ART = "ART", _("Art Paper")
-
-    shop = models.ForeignKey(
-        Shop,
-        on_delete=models.CASCADE,
-        related_name="paper_prices"
-    )
-    sheet_size = models.CharField(
-        _("paper size"),
-        max_length=20,
-        choices=SheetSize.choices,
-        default=SheetSize.A3
-    )
-    gsm = models.PositiveIntegerField(
-        _("GSM (weight)"),
-        validators=[MinValueValidator(60), MaxValueValidator(500)],
-        help_text=_("Paper weight: 80, 130, 150, 200, 300, etc.")
-    )
-    paper_type = models.CharField(
-        _("paper type"),
-        max_length=20,
-        choices=PaperType.choices,
-        default=PaperType.GLOSS
-    )
-    
-    # Simple pricing - clear terminology
-    buying_price = models.DecimalField(
-        _("buying price"),
-        max_digits=10,
-        decimal_places=2,
-        validators=[MinValueValidator(Decimal("0.00"))],
-        help_text=_("What YOU pay per sheet")
-    )
-    selling_price = models.DecimalField(
-        _("selling price"),
-        max_digits=10,
-        decimal_places=2,
-        validators=[MinValueValidator(Decimal("0.01"))],
-        help_text=_("What CUSTOMER pays per sheet")
-    )
-    
-    is_active = models.BooleanField(_("active"), default=True)
-    is_default_seeded = models.BooleanField(_("default seeded"), default=False)
-    needs_review = models.BooleanField(_("needs review"), default=False)
-
-    class Meta:
-        verbose_name = _("paper price")
-        verbose_name_plural = _("paper prices")
-        ordering = ["sheet_size", "gsm"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["shop", "sheet_size", "gsm", "paper_type"],
-                name="unique_paper_price"
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.sheet_size} {self.gsm}gsm {self.get_paper_type_display()}: KES {self.selling_price}"
-    
-    @property
-    def profit(self) -> Decimal:
-        """Profit per sheet."""
-        return self.selling_price - self.buying_price
-    
-    @property
-    def margin_percent(self) -> Decimal:
-        """Profit margin as percentage."""
-        if self.selling_price > 0:
-            return ((self.selling_price - self.buying_price) / self.selling_price) * 100
-        return Decimal("0")
 
 
 # =============================================================================
@@ -510,19 +416,18 @@ class PriceCalculator:
                 else:
                     result["total_printing"] = printing.selling_price_per_side * quantity
             
-            # Get paper price
-            try:
-                paper = PaperPrice.objects.get(
-                    shop=shop,
-                    sheet_size=sheet_size,
-                    gsm=gsm,
-                    paper_type=paper_type,
-                    is_active=True
-                )
+            # Get paper price (from inventory.Paper)
+            from inventory.models import Paper
+            paper = Paper.objects.filter(
+                shop=shop,
+                sheet_size=sheet_size,
+                gsm=gsm,
+                paper_type=paper_type,
+                is_active=True
+            ).first()
+            if paper:
                 result["paper_price_per_sheet"] = paper.selling_price
                 result["total_paper"] = paper.selling_price * quantity
-            except PaperPrice.DoesNotExist:
-                pass
         
         # Get finishing prices
         if finishing_ids:
@@ -778,9 +683,8 @@ class DefaultFinishingServiceTemplate(TimeStampedModel):
 # LEGACY COMPATIBILITY - Keep old models working during transition
 # =============================================================================
 
-# Alias for backward compatibility with existing code
+# Alias for backward compatibility
 DigitalPrintPrice = PrintingPrice
-PaperGSMPrice = PaperPrice
 FinishingPrice = FinishingService
 
 

@@ -8,7 +8,6 @@ from django.utils.html import format_html
 
 from .models import (
     PrintingPrice,
-    PaperPrice,
     MaterialPrice,
     FinishingService,
     VolumeDiscount,
@@ -68,61 +67,6 @@ class PrintingPriceAdmin(admin.ModelAdmin):
             return format_html('<span style="color: green;">KES {}</span>', profit)
         return "-"
     profit_display.short_description = "Profit"
-
-
-@admin.register(PaperPrice)
-class PaperPriceAdmin(admin.ModelAdmin):
-    """Paper prices by GSM - the main rate card."""
-    
-    list_display = [
-        "shop",
-        "sheet_size",
-        "gsm",
-        "paper_type",
-        "buying_price",
-        "selling_price",
-        "profit_display",
-        "margin_display",
-        "is_active",
-    ]
-    list_filter = ["shop", "sheet_size", "gsm", "paper_type", "is_active"]
-    list_editable = ["buying_price", "selling_price", "is_active"]
-    search_fields = ["shop__name"]
-    ordering = ["shop", "sheet_size", "gsm"]
-    
-    fieldsets = (
-        ("Paper Details", {
-            "fields": ("shop", "sheet_size", "gsm", "paper_type")
-        }),
-        ("Pricing", {
-            "fields": ("buying_price", "selling_price"),
-            "description": "Set buying (your cost) and selling (customer pays) prices"
-        }),
-        ("Status", {
-            "fields": ("is_active",)
-        }),
-    )
-    
-    def buying_price_display(self, obj):
-        return f"KES {obj.buying_price}"
-    buying_price_display.short_description = "Buy"
-    buying_price_display.admin_order_field = "buying_price"
-    
-    def selling_price_display(self, obj):
-        return format_html("<strong>KES {}</strong>", obj.selling_price)
-    selling_price_display.short_description = "Sell"
-    selling_price_display.admin_order_field = "selling_price"
-    
-    def profit_display(self, obj):
-        profit = obj.profit
-        color = "green" if profit > 0 else "red"
-        return format_html('<span style="color: {};">KES {}</span>', color, profit)
-    profit_display.short_description = "Profit"
-    
-    def margin_display(self, obj):
-        margin = obj.margin_percent
-        return f"{margin:.1f}%"
-    margin_display.short_description = "Margin"
 
 
 @admin.register(MaterialPrice)

@@ -9,10 +9,9 @@ from decimal import Decimal
 from django.db import transaction
 
 from shops.models import Shop
-from inventory.models import Machine
+from inventory.models import Machine, Paper
 from pricing.models import (
     PrintingPrice,
-    PaperPrice,
     MaterialPrice,
     FinishingService,
     DefaultPrintingPriceTemplate,
@@ -33,7 +32,7 @@ def seed_shop_pricing(
     - Printing: For each shop machine (or filtered by machine_ids), map to template
       by machine_category (machine.machine_type); clone template rows into PrintingPrice
       if missing.
-    - Paper: Clone DefaultPaperPriceTemplate into PaperPrice for shop if missing.
+    - Paper: Clone DefaultPaperPriceTemplate into Paper for shop if missing.
     - Materials: Clone DefaultMaterialPriceTemplate into MaterialPrice for shop if missing.
     - Finishing: Clone DefaultFinishingServiceTemplate into FinishingService for shop if missing.
 
@@ -88,9 +87,9 @@ def seed_shop_pricing(
                     )
                     result["printing"]["created"] += 1
 
-        # Paper
+        # Paper (inventory.Paper)
         for tpl in DefaultPaperPriceTemplate.objects.all():
-            existing = PaperPrice.objects.filter(
+            existing = Paper.objects.filter(
                 shop=shop,
                 sheet_size=tpl.sheet_size,
                 paper_type=tpl.paper_type,
@@ -104,13 +103,13 @@ def seed_shop_pricing(
                     existing.save(update_fields=["selling_price", "buying_price", "updated_at"])
                     result["paper"]["updated"] += 1
             else:
-                PaperPrice.objects.create(
+                Paper.objects.create(
                     shop=shop,
                     sheet_size=tpl.sheet_size,
                     paper_type=tpl.paper_type,
                     gsm=tpl.gsm,
-                    selling_price=tpl.selling_price,
                     buying_price=tpl.buying_price or Decimal("0"),
+                    selling_price=tpl.selling_price,
                     is_default_seeded=True,
                     needs_review=True,
                 )

@@ -27,13 +27,14 @@ class QuoteItemPartInline(admin.StackedInline):
     model = QuoteItemPart
     extra = 1
     classes = ["collapse"]
+    autocomplete_fields = ["paper", "machine"]
     
     fieldsets = (
         ("Part Details", {
             "fields": ("name", ("final_width", "final_height"))
         }),
         ("Paper & Printing", {
-            "fields": ("paper_stock", "paper_gsm", "machine", "print_sides")
+            "fields": ("paper", "machine", "print_sides")
         }),
         ("Calculated Results", {
             "fields": ("items_per_sheet", "total_sheets_required", "part_cost"),
@@ -79,7 +80,7 @@ class ProductTemplateAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (None, {
-            "fields": ("shop", "name", "description", "is_active")
+            "fields": ("shop", "template", "name", "description", "is_active")
         }),
         ("Default Settings (JSON)", {
             "fields": ("defaults",),
@@ -254,6 +255,7 @@ class QuoteItemAdmin(admin.ModelAdmin):
 
 @admin.register(QuoteItemPart)
 class QuoteItemPartAdmin(admin.ModelAdmin):
+    autocomplete_fields = ["paper", "machine"]
     list_display = [
         "name",
         "item",
@@ -276,8 +278,8 @@ class QuoteItemPartAdmin(admin.ModelAdmin):
             "fields": (("final_width", "final_height"),)
         }),
         ("Paper", {
-            "fields": ("paper_stock", "paper_gsm"),
-            "description": "Select paper from stock OR enter GSM directly"
+            "fields": ("paper",),
+            "description": "Select paper (dimensions + price from this record)"
         }),
         ("Printing", {
             "fields": ("machine", "print_sides")

@@ -7,20 +7,14 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from shops.models import Shop
-from shops.permissions import IsShopOwner, IsShopManagerOrOwner, IsShopMember
+from shops.permissions import IsShopOwner, IsShopMember
 
-from .models import Machine, MachineCapability, Material, MaterialStock, PaperStock
-from .serializers import (
-    MachineSerializer, 
-    MachineWithCapabilitiesCreateSerializer,
-    MachineCapabilitySerializer,
-    MaterialSerializer,
-    MaterialStockSerializer,
-    PaperStockSerializer,
-)
+from .models import Machine, Paper
+from .serializers import MachineSerializer, PaperSerializer
+
 
 # =============================================================================
-# Machine ViewSets
+# Machine ViewSet
 # =============================================================================
 
 class MachineViewSet(viewsets.ModelViewSet):
@@ -28,20 +22,14 @@ class MachineViewSet(viewsets.ModelViewSet):
     Manage Machines for a specific shop.
     Endpoint: /api/shops/{shop_slug}/machines/
     """
-    
-    def get_serializer_class(self):
-        if self.action == 'create':
-            return MachineWithCapabilitiesCreateSerializer
-        return MachineSerializer
+    serializer_class = MachineSerializer
 
     def get_shop(self):
-        """Get shop from URL slug and cache it."""
         if not hasattr(self, "_shop"):
             self._shop = get_object_or_404(Shop, slug=self.kwargs["shop_slug"])
         return self._shop
 
     def get_queryset(self):
-        """Filter machines by shop."""
         return Machine.objects.filter(shop=self.get_shop()).order_by("name")
 
     def get_serializer_context(self):
@@ -50,11 +38,9 @@ class MachineViewSet(viewsets.ModelViewSet):
         return context
 
     def get_permissions(self):
-        """Only shop owner can manage machines (onboarding)."""
         return [permissions.IsAuthenticated(), IsShopOwner()]
 
     def _check_machine_limit(self, shop, machine_type):
-        """Enforce subscription limits. Returns (allowed, error_message)."""
         from subscription.models import Subscription, SubscriptionPlan
         from subscription.views import get_subscription_for_shop
 
@@ -124,39 +110,16 @@ class MachineViewSet(viewsets.ModelViewSet):
         serializer.save(shop=shop)
 
 
-class MachineCapabilityViewSet(viewsets.ModelViewSet):
-    """
-    Manage capabilities for a specific machine.
-    Endpoint: /api/shops/{shop_slug}/machines/{machine_pk}/capabilities/
-    """
-    serializer_class = MachineCapabilitySerializer
-
-    def get_machine(self):
-        shop = get_object_or_404(Shop, slug=self.kwargs["shop_slug"])
-        return get_object_or_404(Machine, pk=self.kwargs["machine_pk"], shop=shop)
-
-    def get_queryset(self):
-        return MachineCapability.objects.filter(machine=self.get_machine())
-
-    def perform_create(self, serializer):
-        serializer.save(machine=self.get_machine())
-
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [permissions.IsAuthenticated(), IsShopMember()]
-        return [permissions.IsAuthenticated(), IsShopManagerOrOwner()]
-
-
 # =============================================================================
-# Material ViewSets
+# Paper ViewSet (unified: buy/sell + optional stock)
 # =============================================================================
 
-class MaterialViewSet(viewsets.ModelViewSet):
+class PaperViewSet(viewsets.ModelViewSet):
     """
-    Manage Materials for a specific shop.
-    Endpoint: /api/shops/{shop_slug}/materials/
+    Manage paper for a shop (unified: buy/sell prices + optional stock).
+    Endpoint: /api/shops/{shop_slug}/paper/
     """
-    serializer_class = MaterialSerializer
+    serializer_class = PaperSerializer
 
     def get_shop(self):
         if not hasattr(self, "_shop"):
@@ -164,7 +127,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         return self._shop
 
     def get_queryset(self):
-        return Material.objects.filter(shop=self.get_shop()).order_by("name")
+        return Paper.objects.filter(shop=self.get_shop()).order_by("sheet_size", "gsm")
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -174,95 +137,31 @@ class MaterialViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
             return [permissions.IsAuthenticated(), IsShopMember()]
-        return [permissions.IsAuthenticated(), IsShopManagerOrOwner()]
-
-
-class MaterialStockViewSet(viewsets.ModelViewSet):
-    """
-    Manage specific stock variants for a material.
-    Endpoint: /api/shops/{shop_slug}/materials/{material_pk}/stock/
-    """
-    serializer_class = MaterialStockSerializer
-
-    def get_material(self):
-        shop = get_object_or_404(Shop, slug=self.kwargs["shop_slug"])
-        return get_object_or_404(Material, pk=self.kwargs["material_pk"], shop=shop)
-
-    def get_queryset(self):
-        return MaterialStock.objects.filter(material=self.get_material()).order_by("label")
+        return [permissions.IsAuthenticated(), IsShopOwner()]
 
     def perform_create(self, serializer):
-        serializer.save(material=self.get_material())
-
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [permissions.IsAuthenticated(), IsShopMember()]
-        return [permissions.IsAuthenticated(), IsShopManagerOrOwner()]
-
-    @action(detail=True, methods=['post'])
-    def adjust_stock(self, request, shop_slug=None, material_pk=None, pk=None):
-        """
-        Simple endpoint to increment/decrement stock.
-        Body: {"adjustment": 10} or {"adjustment": -5}
-        """
-        stock = self.get_object()
-        try:
-            adjustment = int(request.data.get("adjustment", 0))
-        except (ValueError, TypeError):
-            return Response({"error": "Invalid adjustment value"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        stock.current_stock_level += adjustment
-        if stock.current_stock_level < 0:
-            stock.current_stock_level = 0
-            
-        stock.save()
-        return Response(self.get_serializer(stock).data)
-
-
-# =============================================================================
-# Paper Stock ViewSet (works with actual PaperStock model)
-# =============================================================================
-
-class PaperStockViewSet(viewsets.ModelViewSet):
-    """
-    Manage paper stock (inventory) for a shop.
-    Endpoint: /api/shops/{shop_slug}/paper-stock/
-    """
-    serializer_class = PaperStockSerializer
-
-    def get_shop(self):
-        if not hasattr(self, "_shop"):
-            self._shop = get_object_or_404(Shop, slug=self.kwargs["shop_slug"])
-        return self._shop
-
-    def get_queryset(self):
-        return PaperStock.objects.filter(shop=self.get_shop()).order_by("sheet_size", "gsm")
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context["shop"] = self.get_shop()
-        return context
-
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [permissions.IsAuthenticated(), IsShopMember()]
-        return [permissions.IsAuthenticated(), IsShopManagerOrOwner()]
+        serializer.save(shop=self.get_shop())
 
     @action(detail=True, methods=['post'])
     def adjust(self, request, shop_slug=None, pk=None):
         """
-        Adjust stock quantity.
+        Adjust stock quantity (when quantity_in_stock is tracked).
         Body: {"adjustment": 10} or {"adjustment": -5}
         """
-        stock = self.get_object()
+        paper = self.get_object()
+        if paper.quantity_in_stock is None:
+            return Response(
+                {"error": "Stock tracking not enabled for this paper"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         try:
             adjustment = int(request.data.get("adjustment", 0))
         except (ValueError, TypeError):
             return Response({"error": "Invalid adjustment value"}, status=status.HTTP_400_BAD_REQUEST)
 
-        stock.quantity_in_stock += adjustment
-        if stock.quantity_in_stock < 0:
-            stock.quantity_in_stock = 0
+        paper.quantity_in_stock += adjustment
+        if paper.quantity_in_stock < 0:
+            paper.quantity_in_stock = 0
 
-        stock.save()
-        return Response(PaperStockSerializer(stock).data)
+        paper.save()
+        return Response(PaperSerializer(paper).data)

@@ -1,56 +1,16 @@
 # inventory/serializers.py
 
-from django.db import transaction
 from rest_framework import serializers
 
-from .models import Machine, MachineCapability, Material, MaterialStock, PaperStock
+from .models import Machine, Paper
 
 
 # =============================================================================
 # Machine Serializers
 # =============================================================================
 
-class MachineCapabilitySerializer(serializers.ModelSerializer):
-    """
-    Serializer for machine capabilities (nested in Machine).
-    """
-    feed_type_display = serializers.CharField(source="get_feed_type_display", read_only=True)
-
-    class Meta:
-        model = MachineCapability
-        fields = [
-            "id", 
-            "feed_type", 
-            "feed_type_display", 
-            "max_width", 
-            "max_height"
-        ]
-        read_only_fields = ["id"]
-    
-    def validate(self, attrs):
-        """Cross-field validation for dimensions based on feed type."""
-        feed_type = attrs.get("feed_type")
-        max_width = attrs.get("max_width")
-        max_height = attrs.get("max_height")
-        
-        # Note: If updating, self.instance might be needed to check existing values,
-        # but for simplicity, we assume full payloads or handle partials carefully.
-        
-        if feed_type == MachineCapability.FeedType.SHEET_FED:
-            if not max_width or not max_height:
-                raise serializers.ValidationError("Sheet fed machines require both max width and max height.")
-        
-        if feed_type == MachineCapability.FeedType.ROLL_FED:
-            if not max_width:
-                raise serializers.ValidationError("Roll fed machines require a max width.")
-                
-        return attrs
-
-
 class MachinePublicSerializer(serializers.ModelSerializer):
-    """
-    Minimal serializer for public display (e.g. on shop detail page).
-    """
+    """Minimal serializer for public display."""
     type_display = serializers.CharField(source="get_machine_type_display", read_only=True)
 
     class Meta:
@@ -59,151 +19,53 @@ class MachinePublicSerializer(serializers.ModelSerializer):
 
 
 class MachineSerializer(serializers.ModelSerializer):
-    """
-    Main serializer for Machines, including read-only capabilities.
-    """
+    """Main serializer for Machines."""
     type_display = serializers.CharField(source="get_machine_type_display", read_only=True)
-    capabilities = MachineCapabilitySerializer(many=True, read_only=True)
 
     class Meta:
         model = Machine
         fields = [
-            "id", 
-            "name", 
+            "id",
+            "name",
             "machine_type",
-            "type_display", 
-            "is_active", 
-            "capabilities", 
-            "created_at", 
-            "updated_at"
+            "type_display",
+            "max_paper_width",
+            "max_paper_height",
+            "is_active",
+            "created_at",
+            "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate_name(self, value):
-        """Ensure name uniqueness per shop (context required)."""
         shop = self.context.get("shop")
         if not shop:
-            return value # Skip if no context (shouldn't happen in viewset)
-            
+            return value
         qs = Machine.objects.filter(shop=shop, name__iexact=value)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
-        
         if qs.exists():
             raise serializers.ValidationError("A machine with this name already exists in your shop.")
         return value
 
     def create(self, validated_data):
-        """Inject shop from context."""
-        validated_data["shop"] = self.context["shop"]
-        return super().create(validated_data)
-
-
-class MachineWithCapabilitiesCreateSerializer(MachineSerializer):
-    """
-    Writable serializer that allows creating a machine AND its capabilities in one go.
-    """
-    capabilities = MachineCapabilitySerializer(many=True, required=False)
-
-    def create(self, validated_data):
-        capabilities_data = validated_data.pop("capabilities", [])
-        validated_data["shop"] = self.context["shop"]
-        
-        with transaction.atomic():
-            machine = Machine.objects.create(**validated_data)
-            
-            for cap_data in capabilities_data:
-                MachineCapability.objects.create(machine=machine, **cap_data)
-                
-        return machine
-
-
-# =============================================================================
-# Material Serializers
-# =============================================================================
-
-class MaterialStockSerializer(serializers.ModelSerializer):
-    """
-    Serializer for specific material stock sizes.
-    """
-    class Meta:
-        model = MaterialStock
-        fields = [
-            "id", 
-            "label", 
-            "width", 
-            "height", 
-            "current_stock_level",
-            "created_at"
-        ]
-        read_only_fields = ["id", "created_at"]
-
-    def validate(self, attrs):
-        """Validate dimensions based on parent material type (requires nested context or lookup)."""
-        # Note: Ideally validation happens in the View or Model.clean(), 
-        # but we can do basic checks here if height is missing.
-        return attrs
-
-
-class MaterialSerializer(serializers.ModelSerializer):
-    """
-    Main serializer for Materials.
-    """
-    type_display = serializers.CharField(source="get_type_display", read_only=True)
-    unit_type_display = serializers.CharField(source="get_unit_type_display", read_only=True)
-    stock_variants = MaterialStockSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = Material
-        fields = [
-            "id", 
-            "name", 
-            "type", 
-            "type_display", 
-            "cost_per_unit", 
-            "unit_type", 
-            "unit_type_display", 
-            "is_active", 
-            "stock_variants",
-            "created_at",
-            "updated_at"
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-    def validate_name(self, value):
-        """Ensure name uniqueness per shop."""
-        shop = self.context.get("shop")
-        if not shop:
-            return value
-            
-        qs = Material.objects.filter(shop=shop, name__iexact=value)
-        if self.instance:
-            qs = qs.exclude(pk=self.instance.pk)
-            
-        if qs.exists():
-            raise serializers.ValidationError("A material with this name already exists.")
-        return value
-
-    def create(self, validated_data):
         validated_data["shop"] = self.context["shop"]
         return super().create(validated_data)
 
 
 # =============================================================================
-# Paper Stock Serializers (works with actual PaperStock model)
+# Paper Serializers
 # =============================================================================
 
-class PaperStockSerializer(serializers.ModelSerializer):
-    """
-    Serializer for PaperStock - paper inventory (sheet_size, gsm, paper_type).
-    """
+class PaperSerializer(serializers.ModelSerializer):
+    """Serializer for Paper (unified: buy/sell + optional stock)."""
     sheet_size_display = serializers.CharField(source="get_sheet_size_display", read_only=True)
     paper_type_display = serializers.CharField(source="get_paper_type_display", read_only=True)
     display_name = serializers.CharField(read_only=True)
     needs_reorder = serializers.BooleanField(read_only=True)
 
     class Meta:
-        model = PaperStock
+        model = Paper
         fields = [
             "id",
             "sheet_size",
@@ -213,9 +75,10 @@ class PaperStockSerializer(serializers.ModelSerializer):
             "paper_type_display",
             "width_mm",
             "height_mm",
+            "buying_price",
+            "selling_price",
             "quantity_in_stock",
             "reorder_level",
-            "buying_price_per_sheet",
             "is_active",
             "display_name",
             "needs_reorder",
@@ -231,11 +94,11 @@ class PaperStockSerializer(serializers.ModelSerializer):
         sheet_size = attrs.get("sheet_size", getattr(self.instance, "sheet_size", None))
         gsm = attrs.get("gsm", getattr(self.instance, "gsm", None))
         paper_type = attrs.get("paper_type", getattr(self.instance, "paper_type", None))
-        qs = PaperStock.objects.filter(shop=shop, sheet_size=sheet_size, gsm=gsm, paper_type=paper_type)
+        qs = Paper.objects.filter(shop=shop, sheet_size=sheet_size, gsm=gsm, paper_type=paper_type)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
-            raise serializers.ValidationError("A paper stock with this size, GSM and type already exists.")
+            raise serializers.ValidationError("A paper with this size, GSM and type already exists.")
         return attrs
 
     def create(self, validated_data):

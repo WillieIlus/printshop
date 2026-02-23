@@ -1,6 +1,6 @@
 # inventory/admin.py
 """
-Simple admin for inventory management.
+Admin for inventory: Machine (with PrintingPrice inline), Paper.
 """
 
 from django.contrib import admin
@@ -8,7 +8,7 @@ from django.utils.html import format_html
 
 from pricing.models import PrintingPrice
 
-from .models import Machine, PaperStock
+from .models import Machine, Paper
 
 
 class PrintingPriceInline(admin.TabularInline):
@@ -57,23 +57,24 @@ class MachineAdmin(admin.ModelAdmin):
     max_size_display.short_description = "Max Size"
 
 
-@admin.register(PaperStock)
-class PaperStockAdmin(admin.ModelAdmin):
-    """Manage paper stock/inventory."""
+@admin.register(Paper)
+class PaperAdmin(admin.ModelAdmin):
+    """Manage paper (unified: buy/sell + optional stock)."""
     
     list_display = [
         "shop",
         "sheet_size",
         "gsm",
         "paper_type",
+        "buying_price",
+        "selling_price",
         "quantity_in_stock",
         "reorder_status",
-        "buying_price_display",
         "is_active"
     ]
     list_filter = ["shop", "sheet_size", "paper_type", "gsm", "is_active"]
-    list_editable = ["quantity_in_stock", "is_active"]
-    search_fields = ["shop__name"]
+    list_editable = ["buying_price", "selling_price", "is_active"]
+    search_fields = ["shop__name", "sheet_size", "paper_type"]
     ordering = ["shop", "sheet_size", "gsm"]
     
     fieldsets = (
@@ -82,25 +83,20 @@ class PaperStockAdmin(admin.ModelAdmin):
         }),
         ("Dimensions", {
             "fields": ("width_mm", "height_mm"),
-            "description": "Auto-filled based on paper size, or enter custom dimensions"
+            "description": "Auto-filled based on paper size"
         }),
-        ("Stock Levels", {
+        ("Pricing", {
+            "fields": ("buying_price", "selling_price"),
+            "description": "What you pay and what customer pays per sheet"
+        }),
+        ("Stock (Optional)", {
             "fields": ("quantity_in_stock", "reorder_level"),
-            "description": "Track how much paper you have"
-        }),
-        ("Cost (Optional)", {
-            "fields": ("buying_price_per_sheet",),
             "classes": ("collapse",),
         }),
         ("Status", {
             "fields": ("is_active",)
         }),
     )
-    
-    def stock_display(self, obj):
-        return f"{obj.quantity_in_stock} sheets"
-    stock_display.short_description = "In Stock"
-    stock_display.admin_order_field = "quantity_in_stock"
     
     def reorder_status(self, obj):
         if obj.needs_reorder:
@@ -109,9 +105,3 @@ class PaperStockAdmin(admin.ModelAdmin):
             )
         return format_html('<span style="color: green;">✓ OK</span>')
     reorder_status.short_description = "Status"
-    
-    def buying_price_display(self, obj):
-        if obj.buying_price_per_sheet:
-            return f"KES {obj.buying_price_per_sheet}"
-        return "-"
-    buying_price_display.short_description = "Cost/Sheet"

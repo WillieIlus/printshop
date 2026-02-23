@@ -248,7 +248,7 @@ class PrintTemplate(TimeStampedModel):
 class TemplateFinishing(TimeStampedModel):
     """
     Finishing options available for a template.
-    Some are mandatory (included in base price), others are optional add-ons.
+    Links to shop's FinishingService for pricing; optional price_adjustment override.
     """
     
     template = models.ForeignKey(
@@ -256,10 +256,18 @@ class TemplateFinishing(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="finishing_options",
     )
+    finishing_service = models.ForeignKey(
+        "pricing.FinishingService",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="template_finishings",
+        help_text=_("Shop finishing service for pricing. When null, use price_adjustment."),
+    )
     name = models.CharField(
         _("finishing name"),
         max_length=100,
-        help_text=_("e.g., Matt Lamination, Spot UV"),
+        help_text=_("e.g., Matt Lamination, Spot UV (fallback when finishing_service null)"),
     )
     description = models.TextField(
         _("description"),
@@ -280,7 +288,7 @@ class TemplateFinishing(TimeStampedModel):
         max_digits=10,
         decimal_places=2,
         default=Decimal("0.00"),
-        help_text=_("Additional cost per unit (0 if included in base)"),
+        help_text=_("Override per unit when finishing_service set; or sole price when null"),
     )
     display_order = models.PositiveIntegerField(
         _("display order"),
@@ -294,7 +302,8 @@ class TemplateFinishing(TimeStampedModel):
 
     def __str__(self) -> str:
         mandatory = " (Mandatory)" if self.is_mandatory else ""
-        return f"{self.template.title} - {self.name}{mandatory}"
+        label = self.finishing_service.name if self.finishing_service else self.name
+        return f"{self.template.title} - {label}{mandatory}"
 
 
 class TemplateOption(TimeStampedModel):

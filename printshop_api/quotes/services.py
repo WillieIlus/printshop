@@ -4,14 +4,14 @@ Quote calculation service.
 
 Calculates costs based on:
 - Printing (per side from PrintingPrice)
-- Paper (from PaperPrice or PaperStock)
+- Paper (from part.paper - direct FK, no attribute lookup)
 - Finishing (from FinishingService)
 """
 
 import math
 from decimal import Decimal
 
-from pricing.models import PrintingPrice, PaperPrice, FinishingService
+from pricing.models import PrintingPrice, FinishingService
 
 
 class QuoteCalculator:
@@ -52,29 +52,24 @@ class QuoteCalculator:
         """
         Calculate cost for a quote item part.
         
-        Includes:
-        - Paper cost (from stock or paper price)
-        - Printing cost (from printing price)
-        
-        Updates the part instance but does NOT save it.
+        Uses part.paper (direct FK) for dimensions + selling_price. No attribute lookup.
+        When paper is null: use default A3 dimensions for imposition, paper_cost=0.
         """
         shop = part.item.quote.shop
         quantity = part.item.quantity
         
-        # 1. Determine paper stock/size to use
-        stock = part.paper_stock
-        
-        if stock:
-            stock_width = stock.width_mm
-            stock_height = stock.height_mm
-            paper_gsm = stock.gsm
-            sheet_size = stock.sheet_size
+        # 1. Get dimensions and paper cost from part.paper (direct FK)
+        paper = part.paper
+        if paper:
+            stock_width = paper.width_mm or 297
+            stock_height = paper.height_mm or 420
+            sheet_size = paper.sheet_size
+            paper_cost = quantity  # will multiply by price per sheet after imposition
         else:
-            # Use standard A3 if no stock specified
             stock_width = 297
             stock_height = 420
-            paper_gsm = part.paper_gsm or 150
             sheet_size = "A3"
+            paper_cost = Decimal("0.00")
         
         # 2. Calculate imposition
         items_per_sheet = self.calculate_imposition(
@@ -93,42 +88,32 @@ class QuoteCalculator:
         sheets_required = math.ceil(quantity / items_per_sheet)
         part.total_sheets_required = sheets_required
         
-        # 4. Get paper price
-        paper_cost = Decimal("0.00")
-        try:
-            paper_price = PaperPrice.objects.get(
-                shop=shop,
-                sheet_size=sheet_size,
-                gsm=paper_gsm,
-                is_active=True
-            )
-            paper_cost = sheets_required * paper_price.selling_price
-        except PaperPrice.DoesNotExist:
-            # Use buying price from stock if available
-            if stock and stock.buying_price_per_sheet:
-                paper_cost = sheets_required * stock.buying_price_per_sheet
+        # 4. Paper cost: use part.paper.selling_price directly (no lookup)
+        if paper:
+            paper_cost = sheets_required * paper.selling_price
+        else:
+            paper_cost = Decimal("0.00")
         
-        # 5. Get printing price
+        # 5. Printing price
         print_cost = Decimal("0.00")
-        try:
-            printing_filter = {
-                "shop": shop,
-                "sheet_size": sheet_size,
-                "is_active": True
-            }
-            if part.machine:
-                printing_filter["machine"] = part.machine
-            
-            print_price = PrintingPrice.objects.filter(**printing_filter).first()
-            
-            if print_price:
-                sides = 2 if part.print_sides == "DOUBLE" else 1
-                rate = print_price.selling_price_per_side * sides
-                print_cost = sheets_required * rate
-        except Exception:
-            pass
+        printing_filter = {
+            "shop": shop,
+            "sheet_size": sheet_size,
+            "is_active": True
+        }
+        if part.machine:
+            printing_filter["machine"] = part.machine
         
-        # 6. Calculate total
+        print_price = PrintingPrice.objects.filter(**printing_filter).first()
+        if print_price:
+            sides = 2 if part.print_sides == "DOUBLE" else 1
+            if sides == 2 and print_price.selling_price_duplex_per_sheet is not None:
+                rate = print_price.selling_price_duplex_per_sheet
+            else:
+                rate = print_price.selling_price_per_side * sides
+            print_cost = sheets_required * rate
+        
+        # 6. Total
         total_part_cost = paper_cost + print_cost
         part.part_cost = total_part_cost
         

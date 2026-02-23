@@ -27,7 +27,6 @@ app_name = "pricing"
 
 from .views import (
     PrintingPriceViewSet,
-    PaperPriceViewSet,
     MaterialPriceViewSet,
     FinishingServiceViewSet,
     VolumeDiscountViewSet,
@@ -39,10 +38,9 @@ from .views import (
 
 
 # Router for shop-scoped CRUD endpoints
-# Paths: printing-prices, paper-prices, material-prices (onboarding UX)
+# Paper is managed via inventory: /api/shops/{slug}/paper/
 router = DefaultRouter()
 router.register(r"printing-prices", PrintingPriceViewSet, basename="printing-price")
-router.register(r"paper-prices", PaperPriceViewSet, basename="paper-price")
 router.register(r"material-prices", MaterialPriceViewSet, basename="material-price")
 router.register(r"finishing", FinishingServiceViewSet, basename="finishing-service")
 router.register(r"discounts", VolumeDiscountViewSet, basename="volume-discount")
